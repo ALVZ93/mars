@@ -11,7 +11,7 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - Existen core independiente, SDK, CLI interactiva, streaming, tools, sesiones y configuración.
 - Hay adapters reales y fake, API keys, flujos OAuth/device, refresh y logout.
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
-- Existe matriz CI Windows/macOS/Linux, pero esta revisión no ha ejecutado esos jobs remotos.
+- La matriz CI pasa en Windows, macOS y Linux sobre el commit público `f92d171`.
 - El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
 - El paquete raíz ya es publicable y ejecuta el build en `prepack`; todavía no tiene workflow de publicación.
 - No se hicieron llamadas facturables, login real, instalación limpia del tarball ni publicación.
@@ -71,7 +71,8 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [ ] Probar instalación global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
 - [ ] Verificar binario ejecutable, exports SDK y dependencias nativas con Node soportado.
 - [ ] Confirmar nombre/scope y acceso de publicación npm; configurar release versionada y credencial de publicación apropiada.
-- [ ] Ejecutar CI remota en los tres sistemas y smoke tests reales separados de los tests offline.
+- [x] Ejecutar CI remota en Windows, macOS y Linux.
+- [ ] Ejecutar smoke tests reales de instalación y proveedores separados de los tests offline.
 - [x] Actualizar README para que los límites y la política de autenticación coincidan con el código.
 - [x] Añadir instrucciones de contribución, reporte privado de vulnerabilidades y changelog.
 
@@ -82,7 +83,7 @@ La publicación y las decisiones de licencia/cuenta son pasos posteriores; no se
 | Hito | Estado observado | Pendiente principal |
 | --- | --- | --- |
 | v0.1: loop, tools, auth básica, CLI | Base implementada; tests offline verdes | Validación real e instalación limpia |
-| v0.2: uso diario | Mayormente implementado | CI remota y coherencia documental |
+| v0.2: uso diario | Mayormente implementado | Instalación limpia y pruebas reales de proveedores |
 | v0.3: permisos y credenciales | Parcial | Checks fuera del executor; fallback de credenciales; aislamiento efectivo |
 | v0.4: skills | Parcial | Precedencia por nombre y activación por tarea; no hay catálogo built-in |
 | v0.5: extensiones | SDK con eventos y registro de tools/providers/workflows | API estable/documentada, carga de extensiones y comandos personalizados |
