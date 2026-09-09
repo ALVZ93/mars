@@ -15,6 +15,12 @@ test('CLI help, version and configuration failures', async t => {
   assert.match(run(['--help'], isolatedEnv).stdout, /MARS 0.1/);
   assert.match(run(['auth', 'providers'], isolatedEnv).stdout, /Google Gemini API/);
   assert.equal(run(['--version'], isolatedEnv).stdout.trim(), '0.1.0');
+  const configured = run(['config', 'set', 'verification.commands', '["node --version"]', '--workspace', root], isolatedEnv);
+  assert.equal(configured.status, 0, configured.stderr);
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, '.mars', 'config.json'), 'utf8')).verification.commands, ['node --version']);
+  const doctor = run(['doctor', '--workspace', root], isolatedEnv);
+  assert.equal(doctor.status, 0, doctor.stderr);
+  assert.match(doctor.stdout, /credential store: development file \(explicit\)/);
   assert.equal(run(['run', 'task', '--workspace', root], isolatedEnv).status, 1);
   assert.match(run(['run', 'task', '--model', 'openai:test', '--workspace', root], isolatedEnv).stderr, /AuthenticationError/);
   assert.equal(run(['run', 'task', '--model', 'fake:scripted', '--timeout', '-1', '--workspace', root], isolatedEnv).status, 1);

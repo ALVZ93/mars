@@ -361,12 +361,19 @@ async function modelsCommand(json = false): Promise<void> {
   process.stdout.write('\nUse --model provider:model or configure model.default.\n');
 }
 async function doctorCommand(root: string, requestedSandbox?: unknown): Promise<void> {
-  const credentials = createCredentialStore();
   const loaded = await loadConfig(root);
   const git = spawnSync('git', ['--version'], { encoding: 'utf8', windowsHide: true });
   const mode = requestedSandbox === 'docker' || (requestedSandbox === undefined && process.env.MARS_SANDBOX === 'docker') ? 'docker' : 'host';
   const sandbox = sandboxStatus({ mode });
-  process.stdout.write(`MARS doctor\nworkspace: ${root}\nnode: ${process.version}\ngit: ${git.status === 0 ? safe((git.stdout ?? '').trim()) : 'not available'}\nconfig: ${loaded.sources.length ? loaded.sources.join(', ') : 'defaults'}\nproject config: ${projectConfigPath(root)}\nauthenticated providers: ${(await authenticatedProviders(credentials)).join(', ') || 'none'}\ncredential store: ${keychainAvailable() ? 'native keychain (keytar)' : 'file fallback (install keytar for native storage)'}\nsandbox: ${sandbox.message}\nnetwork checks: skipped (use a real run to validate provider availability)\n`);
+  const fileMode = process.env.MARS_CREDENTIAL_STORE === 'file';
+  let providers = 'none';
+  let credentialStore = fileMode ? 'development file (explicit)' : keychainAvailable() ? 'native keychain' : 'native keychain unavailable';
+  try { providers = (await authenticatedProviders(createCredentialStore())).join(', ') || 'none'; }
+  catch (error) {
+    credentialStore = `unavailable (${safe(error instanceof Error ? error.message : 'credential backend failed')})`;
+    providers = 'unavailable';
+  }
+  process.stdout.write(`MARS doctor\nworkspace: ${root}\nnode: ${process.version}\ngit: ${git.status === 0 ? safe((git.stdout ?? '').trim()) : 'not available'}\nconfig: ${loaded.sources.length ? loaded.sources.join(', ') : 'defaults'}\nproject config: ${projectConfigPath(root)}\nauthenticated providers: ${providers}\ncredential store: ${credentialStore}\nsandbox: ${sandbox.message}\nnetwork checks: skipped (use a real run to validate provider availability)\n`);
 }
 async function configCommand(positionals: string[], root: string): Promise<void> {
   const loaded = await loadConfig(root);
@@ -375,12 +382,12 @@ async function configCommand(positionals: string[], root: string): Promise<void>
   if (action === 'path') { process.stdout.write(`${loaded.paths.project}\n`); return; }
   if (action === 'set' && positionals.length >= 4) {
     const key = positionals[2]!;
-    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'mcp.servers']);
+    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'mcp.servers']);
     if (!allowed.has(key)) throw new ForgeError('ConfigurationError', `Unknown config key: ${key}`);
     const raw = positionals.slice(3).join(' ');
     let value: unknown = raw;
-    if (key === 'mcp.servers') {
-      try { value = JSON.parse(raw); } catch { throw new ForgeError('ConfigurationError', 'mcp.servers must be valid JSON.'); }
+    if (key === 'mcp.servers' || key === 'verification.commands') {
+      try { value = JSON.parse(raw); } catch { throw new ForgeError('ConfigurationError', `${key} must be valid JSON.`); }
     }
     if (raw === 'true' || raw === 'false') value = raw === 'true'; else if (/^-?\d+$/.test(raw)) value = Number(raw);
     const patch: Record<string, unknown> = {};
@@ -646,6 +653,7 @@ async function main(): Promise<void> {
   const known = new Set(['run', 'login', 'logout', 'auth', 'resume', 'new', 'sessions', 'check', 'models', 'route', 'workflows', 'doctor', 'init', 'config', 'skills', 'evidence', 'health']);
   const shorthand = Boolean(command && !known.has(command) && !command.startsWith('/'));
   if (command === 'run' && !positionals.slice(1).join(' ').trim()) throw new ForgeError('ConfigurationError', 'Provide a task to run.');
+  if (command === 'doctor') { await doctorCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.sandbox); return; }
   const credentials = createCredentialStore();
   if (command === 'auth') { await authCommand(positionals, credentials); return; }
   if (command === 'logout') { if (!positionals[1]) throw new ForgeError('ConfigurationError', 'Provide a provider to logout.'); await authCommand(['auth', 'logout', positionals[1]], credentials); return; }
@@ -653,7 +661,6 @@ async function main(): Promise<void> {
   if (command === 'models') { await modelsCommand(values.json === true); return; }
   if (command === 'workflows') { await workflowsCommand(); return; }
   let root = await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined);
-  if (command === 'doctor') { await doctorCommand(root, values.sandbox); return; }
   if (command === 'init') { await saveConfig(projectConfigPath(root), {}); process.stdout.write(`Created ${projectConfigPath(root)}\n`); return; }
   if (command === 'config') { await configCommand(positionals, root); return; }
   if (command === 'sessions') { await sessionsCommand(root, values.json === true); return; }
