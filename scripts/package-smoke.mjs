@@ -17,6 +17,8 @@ const expectedVersion = packageJson.version;
 const readme = await readFile(path.join(projectRoot, 'README.md'), 'utf8');
 assert.match(readme, /npm install --global @alvz\/mars/);
 assert.match(readme, /Windows[\s\S]*macOS[\s\S]*Linux/);
+assert.match(readme, /mars login openai --api-key/);
+assert.match(readme, /███    ███  █████/);
 assert.doesNotMatch(readme, /Desarrollo_web|C:\\|pnpm mars|alias de transición/i);
 
 async function run(command, args, cwd) {

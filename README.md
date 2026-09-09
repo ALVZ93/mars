@@ -1,5 +1,18 @@
 # MARS
 
+```text
+███    ███  █████  ██████  ███████
+████  ████ ██   ██ ██   ██ ██
+██ ████ ██ ███████ ██████  ███████
+██  ██  ██ ██   ██ ██   ██      ██
+██      ██ ██   ██ ██   ██ ███████
+```
+
+[![CI](https://github.com/ALVZ93/mars/actions/workflows/ci.yml/badge.svg)](https://github.com/ALVZ93/mars/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-EF4137.svg)](LICENSE)
+[![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-303030.svg)](https://nodejs.org/en/download)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-EF4137.svg)](#instalación)
+
 MARS es un arnés de agentes local para trabajar sobre repositorios desde la terminal. Conecta el modelo que elijas, mantiene sesiones por proyecto y ofrece herramientas de lectura, escritura, búsqueda, Git, shell, verificación, skills, workflows y servidores MCP.
 
 - Funciona en Windows, macOS y Linux.
@@ -79,6 +92,19 @@ mars "Responde con: instalación correcta" --model fake:scripted --no-save
 ```
 
 Puedes borrar la carpeta `mars-test` al terminar.
+
+## OpenAI en un minuto
+
+MARS admite OpenAI mediante una API key. El comando abre una entrada oculta y guarda la clave en el almacén seguro del sistema:
+
+```sh
+mars login openai --api-key
+mars auth status
+mars config set model.default openai:gpt-4o-mini
+mars "Analiza este repositorio y explícame cómo está organizado"
+```
+
+El modelo debe estar habilitado en tu cuenta de OpenAI API y puede sustituirse por cualquier ID compatible mostrado por `mars models`. La API de OpenAI se factura por separado de ChatGPT. MARS no lee cookies ni reutiliza sesiones del navegador.
 
 ## Conectar un proveedor
 

@@ -17,7 +17,7 @@ Actualizada: 2026-09-09. Esta matriz separa tres cosas que suelen confundirse: l
 
 - Un `AuthProvider` declara sus métodos (`oauth-pkce`, `oauth-device`, `api-key`, etc.) y el adapter de modelo recibe una credencial ya resuelta.
 - El núcleo OAuth de MARS genera `state` y PKCE, escucha solo en `127.0.0.1`, valida el callback y no imprime tokens.
-- `createCredentialStore()` intenta primero Credential Manager/Keychain/Secret Service mediante `keytar` cuando está instalado. `MARS_CREDENTIAL_STORE=keychain` exige ese backend; `auto` cae al archivo atómico de desarrollo y `file` lo fuerza. El fallback vive en `%APPDATA%\\mars\\auth.json` (Windows) o `~/.config/mars/auth.json` (macOS/Linux), con permisos `0600` donde el sistema los soporta y sin imprimir tokens.
+- `createCredentialStore()` usa Credential Manager, Keychain o Secret Service mediante `@napi-rs/keyring`. Los modos `auto` y `keychain` exigen ese backend y fallan de forma explícita si no está disponible. `MARS_CREDENTIAL_STORE=file` habilita el archivo atómico únicamente por elección expresa de desarrollo; `mars auth migrate` lo copia al llavero, verifica cada entrada y después lo elimina.
 - MARS solo usa endpoints y contratos declarados por cada adapter. No automatiza cookies, tokens internos ni credenciales de otra aplicación.
 - Los adapters experimentales no forman parte de la promesa estable. Solo pueden habilitarse en desarrollo con `MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH=1`; Anthropic permanece bloqueado incluso con ese flag.
 
