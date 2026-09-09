@@ -28,6 +28,7 @@ export interface MarsConfig {
     maxRetries: number;
     retryDelayMs: number;
   };
+  verification: { commands: string[] };
   mcp: { servers: McpServerConfig[] };
 }
 
@@ -51,6 +52,7 @@ export type ConfigPatch = {
   routing?: Partial<MarsConfig['routing']>;
   permissions?: Partial<MarsConfig['permissions']>;
   limits?: Partial<MarsConfig['limits']>;
+  verification?: Partial<MarsConfig['verification']>;
   mcp?: Partial<MarsConfig['mcp']>;
 };
 
@@ -59,6 +61,7 @@ export const DEFAULT_CONFIG: MarsConfig = {
   routing: { enabled: false },
   permissions: { shell: 'ask', destructiveShell: 'deny', network: 'ask', gitCommit: 'ask', gitPush: 'ask' },
   limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500 },
+  verification: { commands: [] },
   mcp: { servers: [] },
 };
 
@@ -91,6 +94,7 @@ function parseConfig(value: unknown): ConfigPatch {
   const routing = source.routing;
   const permissions = source.permissions;
   const limits = source.limits;
+  const verification = source.verification;
   const mcp = source.mcp;
   const result: ConfigPatch = {};
   if (model !== undefined) {
@@ -123,6 +127,12 @@ function parseConfig(value: unknown): ConfigPatch {
       result.limits.maxRetries = parsed;
     }
     for (const key of ['maxTurns', 'maxToolCalls', 'timeoutMs', 'maxContextChars', 'retryDelayMs'] as const) if (value[key] !== undefined) result.limits[key] = positive(value[key], DEFAULT_CONFIG.limits[key]);
+  }
+  if (verification !== undefined) {
+    if (!verification || typeof verification !== 'object' || Array.isArray(verification)) throw new ForgeError('ConfigurationError', 'Config verification must be an object.');
+    const commands = (verification as Record<string, unknown>).commands;
+    if (!Array.isArray(commands) || commands.length > 32 || commands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096)) throw new ForgeError('ConfigurationError', 'Config verification.commands must contain at most 32 non-empty commands.');
+    result.verification = { commands: commands.map(command => command.trim()) };
   }
   if (mcp !== undefined) {
     if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) throw new ForgeError('ConfigurationError', 'Config mcp must be an object.');
@@ -157,6 +167,7 @@ export function mergeConfig(...configs: Array<ConfigPatch | undefined>): MarsCon
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
+    if (config.verification?.commands) result.verification = { commands: [...config.verification.commands] };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
   return result;
@@ -170,6 +181,7 @@ function mergePatch(...configs: Array<ConfigPatch | undefined>): ConfigPatch {
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
+    if (config.verification?.commands) result.verification = { commands: [...config.verification.commands] };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
   return result;

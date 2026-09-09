@@ -30,13 +30,14 @@ test('config precedence is project over user over defaults and writes atomically
   const root = await tempRoot(t);
   const appData = await tempRoot(t, 'mars-appdata-');
   await saveConfig(path.join(appData, 'mars', 'config.json'), { model: { default: 'openai:from-user' }, limits: { maxTurns: 4, maxRetries: 1, retryDelayMs: 10 } });
-  await saveConfig(path.join(root, '.mars', 'config.json'), { model: { default: 'fake:scripted' }, permissions: { shell: 'deny' }, mcp: { servers: [{ name: 'fixture', command: 'node', args: ['server.mjs'] }] } });
+  await saveConfig(path.join(root, '.mars', 'config.json'), { model: { default: 'fake:scripted' }, permissions: { shell: 'deny' }, verification: { commands: ['cargo test'] }, mcp: { servers: [{ name: 'fixture', command: 'node', args: ['server.mjs'] }] } });
   const loaded = await loadConfig(root, { APPDATA: appData, USERPROFILE: appData, HOME: appData, XDG_CONFIG_HOME: appData });
   assert.equal(loaded.config.model.default, 'fake:scripted');
   assert.equal(loaded.config.limits.maxTurns, 4);
   assert.equal(loaded.config.limits.maxRetries, 1);
   assert.equal(loaded.config.limits.retryDelayMs, 10);
   assert.equal(loaded.config.permissions.shell, 'deny');
+  assert.deepEqual(loaded.config.verification.commands, ['cargo test']);
   assert.deepEqual(loaded.config.mcp.servers[0], { name: 'fixture', command: 'node', args: ['server.mjs'] });
   assert.ok(loaded.sources.some(file => file.endsWith(path.join('.mars', 'config.json'))));
 });
@@ -320,6 +321,20 @@ test('verification requires a real check, permission and a successful structured
   });
   assert.equal(spoofed.verified, false);
   assert.equal(spoofed.checks[0]?.exitCode, 1);
+});
+
+test('configured verification works without package.json and keeps the permission boundary', async t => {
+  const root = await tempRoot(t, 'mars-configured-verification-');
+  const workspace = await Workspace.open(root);
+  const commands = [];
+  const report = await runProjectChecks(workspace, new AbortController().signal, {
+    commands: ['cargo test', 'python -m pytest'],
+    permissions: new Permissions('allow'),
+    shellExecutor: async command => { commands.push(command); return { exitCode: 0, output: 'ok', truncated: false }; },
+  });
+  assert.equal(report.verified, true);
+  assert.deepEqual(commands, ['cargo test', 'python -m pytest']);
+  assert.deepEqual(report.checks.map(check => check.name), ['configured-1', 'configured-2']);
 });
 
 test('AGENTS.md is included as bounded project context before the first model request', async t => {

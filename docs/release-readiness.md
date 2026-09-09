@@ -30,7 +30,7 @@ ni el motor de permisos. Un script estándar de package.json también ejecuta c�
 - [x] Devolver estado «sin verificación» cuando no existen scripts.
 - [x] Comprobar éxito mediante exit code estructurado, sin buscarlo en el texto de salida.
 - [x] Exigir una comprobación real antes de marcar un workflow como verificado.
-- [ ] Permitir estrategia de verificación explícita para proyectos sin package.json.
+- [x] Permitir estrategia de verificación explícita para proyectos sin package.json.
 
 Aceptación: no ejecutar scripts en host cuando se seleccionó Docker; no marcar como
 verificada una tarea que no ejecutó ninguna comprobación.

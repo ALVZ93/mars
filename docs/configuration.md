@@ -44,6 +44,9 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
     "maxRetries": 0,
     "retryDelayMs": 500
   },
+  "verification": {
+    "commands": ["pnpm typecheck", "pnpm test"]
+  },
   "mcp": {
     "servers": [
       {
@@ -58,7 +61,7 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
 }
 ```
 
-`allow`, `ask` y `deny` son los únicos valores válidos para permisos. Los servidores MCP se inician por stdio y su `cwd` se resuelve desde el workspace.
+`allow`, `ask` y `deny` son los únicos valores válidos para permisos. `verification.commands` sustituye la detección automática de scripts y permite verificar proyectos sin `package.json`; cada comando atraviesa los mismos permisos y sandbox que la shell del agente. Los servidores MCP se inician por stdio y su `cwd` se resuelve desde el workspace.
 
 ## Comandos de configuración
 
@@ -68,6 +71,7 @@ mars config path
 mars config set model.default openai:MODEL
 mars config set permissions.shell ask
 mars config set routing.enabled true
+mars config set verification.commands '["cargo test","cargo clippy"]'
 mars config set mcp.servers '[{"name":"local","command":"node","args":["./mcp-server.mjs"]}]'
 ```
 

@@ -174,24 +174,30 @@ export interface VerificationOptions {
   timeoutMs?: number;
   shellExecutor?: ShellExecutor;
   permissions?: Permissions;
+  commands?: readonly string[];
 }
 
-/** Run only known package scripts; arbitrary commands remain behind the shell permission boundary. */
+/** Run configured commands or known package scripts; every command remains behind the shell permission boundary. */
 export async function runProjectChecks(workspace: Workspace, signal: AbortSignal, options: VerificationOptions = {}): Promise<VerificationReport> {
+  const configured = options.commands?.filter(command => command.trim()).map(command => command.trim()) ?? [];
   let packageJson: { scripts?: Record<string, unknown>; packageManager?: string };
-  try { packageJson = JSON.parse(await readFile(path.join(workspace.root, 'package.json'), 'utf8')) as typeof packageJson; }
-  catch { return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No readable package.json found.' }; }
-  const scripts = packageJson.scripts ?? {};
-  const names = ['typecheck', 'test', 'lint', 'build'].filter(name => typeof scripts[name] === 'string');
-  if (!names.length) return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No standard verification scripts found.' };
-  const declaredManager = packageJson.packageManager?.split('@')[0];
-  const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(workspace.root);
+  const planned: Array<{ name: string; command: string }> = [];
+  if (configured.length) configured.forEach((command, index) => planned.push({ name: `configured-${index + 1}`, command }));
+  else {
+    try { packageJson = JSON.parse(await readFile(path.join(workspace.root, 'package.json'), 'utf8')) as typeof packageJson; }
+    catch { return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No verification commands configured and no readable package.json found.' }; }
+    const scripts = packageJson.scripts ?? {};
+    const names = ['typecheck', 'test', 'lint', 'build'].filter(name => typeof scripts[name] === 'string');
+    if (!names.length) return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No configured or standard verification commands found.' };
+    const declaredManager = packageJson.packageManager?.split('@')[0];
+    const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(workspace.root);
+    names.forEach(name => planned.push({ name, command: `${packageManager} run ${name}` }));
+  }
   const checks: VerificationResult[] = [];
   const timeout = options.timeoutMs ?? 120_000;
   const shellExecutor = options.shellExecutor ?? executeShell;
-  for (const name of names) {
+  for (const { name, command } of planned) {
     checkAbort(signal);
-    const command = `${packageManager} run ${name}`;
     let output = '';
     let exitCode: number | null = null;
     let passed = false;
@@ -208,7 +214,7 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
     checks.push({ name, command, exitCode, passed, output: truncate(output) });
     if (!passed) break;
   }
-  const passed = checks.length === names.length && checks.every(check => check.passed);
+  const passed = checks.length === planned.length && checks.every(check => check.passed);
   return { workspace: workspace.root, checks, passed, verified: passed && checks.length > 0 };
 }
 

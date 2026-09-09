@@ -32,6 +32,7 @@ export interface ForgeOptions {
   maxTurns?: number;
   maxToolCalls?: number;
   timeoutMs?: number;
+  verificationCommands?: readonly string[];
   maxContextChars?: number;
   maxRetries?: number;
   retryDelayMs?: number;
@@ -183,7 +184,7 @@ export async function createForge(options: ForgeOptions) {
     get evidenceStore() { return options.evidenceStore; },
     async save() { persist(); await persistQueue; },
     async verify(signal = new AbortController().signal) {
-      return runProjectChecks(workspace, signal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions });
+      return runProjectChecks(workspace, signal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions, commands: options.verificationCommands });
     },
     async close() { await Promise.all(mcpClients.map(client => client.close())); },
     async run(task: string, signal?: AbortSignal) {
@@ -207,7 +208,7 @@ export async function createForge(options: ForgeOptions) {
           const selected = options.roleProviders?.[phase.role] ?? { provider: options.provider, model: options.model };
           await runWith(selected.provider, selected.model, `[${workflow.id}/${phase.id} · ${phase.role}] ${phase.instruction}\n\nOriginal task: ${task}`, workflowSignal);
           if (phase.verification) {
-            const report = await runProjectChecks(workspace, workflowSignal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions });
+            const report = await runProjectChecks(workspace, workflowSignal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions, commands: options.verificationCommands });
             if (!report.verified) throw new ForgeError('ToolExecutionError', `Workflow verification failed${report.reason ? `: ${report.reason}` : '.'}`);
           }
         }

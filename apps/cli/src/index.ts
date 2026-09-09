@@ -286,6 +286,7 @@ async function createSessionForge(target: string, root: string, values: Record<s
     maxRetries: nonNegative(typeof values['max-retries'] === 'string' ? values['max-retries'] : undefined, loaded.config.limits.maxRetries),
     retryDelayMs: positive(typeof values['retry-delay'] === 'string' ? values['retry-delay'] : undefined, loaded.config.limits.retryDelayMs),
     maxContextChars: loaded.config.limits.maxContextChars,
+    verificationCommands: loaded.config.verification.commands,
     shellPolicy, permissionPolicies: { ...loaded.config.permissions, shell: shellPolicy }, approveShell: approval(screen), includeProjectContext: true,
     evidenceStore,
     eventLog: eventLog?.sink,
@@ -409,7 +410,7 @@ async function checkCommand(root: string, values: Record<string, unknown>, json 
     : process.env.MARS_SANDBOX === 'docker' ? { mode: 'docker' as const, image: process.env.MARS_SANDBOX_IMAGE } : undefined;
   const workspace = await Workspace.open(root);
   const shellExecutor = createSandboxShell(workspace.root, sandbox);
-  const report = await runProjectChecks(workspace, new AbortController().signal, { timeoutMs: loaded.config.limits.timeoutMs, shellExecutor, permissions });
+  const report = await runProjectChecks(workspace, new AbortController().signal, { timeoutMs: loaded.config.limits.timeoutMs, shellExecutor, permissions, commands: loaded.config.verification.commands });
   renderCheckReport(report, json);
 }
 async function skillsCommand(root: string): Promise<void> {
