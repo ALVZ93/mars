@@ -16,6 +16,7 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - El paquete raíz ejecuta el build en `prepack`; el workflow verifica tag/versión, repite tests y publica con provenance, pendiente de configurar npm Trusted Publishing.
 - No se hicieron llamadas facturables, login real ni publicación npm.
 - `npm pack` ejecuta el build; la CI instala el tarball en un directorio limpio y valida instalación local/global, `npx`, `pnpm dlx`, binario, exports SDK y carga del keyring nativo.
+- `pnpm audit --prod` no detecta vulnerabilidades conocidas; el tarball incluye la documentación operativa y excluye estado/credenciales locales.
 
 ## Bloqueos antes de distribuir como herramienta estable
 

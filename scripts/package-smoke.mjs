@@ -26,6 +26,10 @@ try {
   const packed = await run(npm, ['pack', '--json', '--pack-destination', root], projectRoot);
   const manifest = JSON.parse(packed.stdout);
   assert.equal(manifest.length, 1);
+  const packedFiles = new Set(manifest[0].files.map(file => file.path));
+  assert.ok(packedFiles.has('docs/configuration.md'));
+  assert.ok(packedFiles.has('docs/releasing.md'));
+  assert.ok([...packedFiles].every(file => !file.startsWith('.mars/') && !file.endsWith('auth.json')));
   const tarball = path.join(root, manifest[0].filename);
 
   const consumer = path.join(root, 'consumer');

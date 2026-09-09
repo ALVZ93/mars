@@ -33,6 +33,7 @@
     "dist/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
+    "docs/**/*.md",
     "LICENSE",
     "NOTICE.md"
   ],
