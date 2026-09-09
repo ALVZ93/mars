@@ -14,6 +14,10 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const root = await mkdtemp(path.join(tmpdir(), 'mars-package-smoke-'));
 const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 const expectedVersion = packageJson.version;
+const readme = await readFile(path.join(projectRoot, 'README.md'), 'utf8');
+assert.match(readme, /npm install --global @alvz\/mars/);
+assert.match(readme, /Windows[\s\S]*macOS[\s\S]*Linux/);
+assert.doesNotMatch(readme, /Desarrollo_web|C:\\|pnpm mars|alias de transición/i);
 
 async function run(command, args, cwd) {
   const windowsCommand = process.platform === 'win32' && command.toLowerCase().endsWith('.cmd');
