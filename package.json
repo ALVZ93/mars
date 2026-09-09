@@ -40,6 +40,7 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
     "test": "pnpm build && node --test tests/*.test.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
     "site": "node apps/site/server.mjs",
     "mars": "node dist/apps/cli/src/index.js",
     "forge": "node dist/apps/cli/src/index.js"
@@ -53,7 +54,7 @@
     "typescript": "^5.9.0"
   },
   "optionalDependencies": {
-    "keytar": "^7.9.0"
+    "@napi-rs/keyring": "^2.0.0"
   },
   "publishConfig": {
     "access": "public"

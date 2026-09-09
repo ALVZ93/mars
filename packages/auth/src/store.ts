@@ -112,21 +112,39 @@ interface KeytarLike {
   deletePassword(service: string, account: string): Promise<boolean>;
 }
 
+interface NativeKeyringLike {
+  Entry: new (service: string, account: string) => {
+    getPassword(): string | null;
+    setPassword(password: string): void;
+    deletePassword(): void;
+  };
+}
+
 const require = createRequire(import.meta.url);
 function loadKeytar(): KeytarLike | undefined {
   try {
-    const value = require('keytar') as Partial<KeytarLike>;
-    if (typeof value.getPassword !== 'function' || typeof value.setPassword !== 'function' || typeof value.deletePassword !== 'function') return undefined;
-    return value as KeytarLike;
-  } catch { return undefined; }
+    const value = require('@napi-rs/keyring') as Partial<NativeKeyringLike>;
+    if (typeof value.Entry !== 'function') return undefined;
+    return {
+      async getPassword(service, account) { return new value.Entry!(service, account).getPassword(); },
+      async setPassword(service, account, password) { new value.Entry!(service, account).setPassword(password); },
+      async deletePassword(service, account) { new value.Entry!(service, account).deletePassword(); return true; },
+    };
+  } catch {
+    try {
+      const value = require('keytar') as Partial<KeytarLike>;
+      if (typeof value.getPassword !== 'function' || typeof value.setPassword !== 'function' || typeof value.deletePassword !== 'function') return undefined;
+      return value as KeytarLike;
+    } catch { return undefined; }
+  }
 }
 
-/** Native Credential Manager/Keychain/Secret Service adapter when optional keytar is installed. */
+/** Native Credential Manager/Keychain/Secret Service adapter. */
 export class KeychainCredentialStore implements CredentialStore {
   readonly service: string;
   readonly #keytar: KeytarLike;
   constructor(service = 'mars', keytar = loadKeytar()) {
-    if (!keytar) throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Install the optional keytar dependency or use file storage.');
+    if (!keytar) throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or use explicit file storage.');
     this.service = service;
     this.#keytar = keytar;
   }
@@ -153,10 +171,8 @@ export function keychainAvailable(): boolean { return Boolean(loadKeytar()); }
 export function createCredentialStore(options: { mode?: CredentialStoreMode; filePath?: string; service?: string } = {}): CredentialStore {
   const mode = options.mode ?? (process.env.MARS_CREDENTIAL_STORE as CredentialStoreMode | undefined) ?? 'auto';
   if (!['auto', 'file', 'keychain'].includes(mode)) throw new ForgeError('ConfigurationError', 'MARS_CREDENTIAL_STORE must be auto, file or keychain.');
-  if (mode !== 'file') {
-    const keytar = loadKeytar();
-    if (keytar) return new KeychainCredentialStore(options.service ?? 'mars', keytar);
-    if (mode === 'keychain') throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Install keytar or set MARS_CREDENTIAL_STORE=file.');
-  }
-  return new FileCredentialStore(options.filePath);
+  if (mode === 'file') return new FileCredentialStore(options.filePath);
+  const keytar = loadKeytar();
+  if (!keytar) throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or explicitly set MARS_CREDENTIAL_STORE=file for development.');
+  return new KeychainCredentialStore(options.service ?? 'mars', keytar);
 }

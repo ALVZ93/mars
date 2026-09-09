@@ -255,6 +255,7 @@ export async function executeShell(command: string, cwd: string, timeout: number
     const child = spawn(executable, args, { cwd, env: shellEnvironment(process.env), windowsHide: true, detached: !windows, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     let truncated = false;
+    let settled = false;
     const collect = (chunk: string) => {
       const remaining = OUTPUT_LIMIT - output.length;
       output += chunk.slice(0, remaining);
@@ -263,22 +264,40 @@ export async function executeShell(command: string, cwd: string, timeout: number
     child.stdout.setEncoding('utf8').on('data', collect);
     child.stderr.setEncoding('utf8').on('data', collect);
     const stop = () => {
-      if (!child.pid) return;
-      if (windows) {
-        const killer = spawn(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe'), ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-        killer.on('error', () => child.kill());
-        killer.on('exit', code => { if (code) child.kill(); });
-      } else {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', stop);
+      const finish = () => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        try { checkAbort(signal); }
+        catch (error) { reject(error); }
+      };
+      if (child.pid && windows) {
+        const killScript = `$ids = [System.Collections.Generic.List[int]]::new(); $ids.Add(${child.pid}); for ($i = 0; $i -lt $ids.Count; $i++) { $parentId = $ids[$i]; Get-CimInstance Win32_Process -Filter \"ParentProcessId = $parentId\" -ErrorAction SilentlyContinue | ForEach-Object { $processId = [int]$_.ProcessId; if (-not $ids.Contains($processId)) { $ids.Add($processId) } } }; $ordered = $ids.ToArray(); [array]::Reverse($ordered); foreach ($processId in $ordered) { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue }`;
+        const killer = spawn(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', killScript], { windowsHide: true, stdio: 'ignore' });
+        let finished = false;
+        const finishOnce = () => { if (!finished) { finished = true; setTimeout(finish, 250); } };
+        killer.on('error', () => { child.kill(); finishOnce(); });
+        killer.on('close', code => { if (code) child.kill(); finishOnce(); });
+      } else if (child.pid) {
         try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+        finish();
+      } else {
+        finish();
       }
     };
     signal.addEventListener('abort', stop, { once: true });
     if (signal.aborted) stop();
     child.on('error', () => {
+      if (settled) return;
+      settled = true;
       signal.removeEventListener('abort', stop);
       reject(new ForgeError('ToolExecutionError', 'Unable to start the configured platform shell.'));
     });
     child.on('close', code => {
+      if (settled) return;
+      settled = true;
       signal.removeEventListener('abort', stop);
       try { checkAbort(signal); }
       catch (error) { reject(error); return; }

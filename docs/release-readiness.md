@@ -13,7 +13,7 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
 - La matriz CI pasa en Windows, macOS y Linux sobre el commit público `f92d171`.
 - El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
-- El paquete raíz ya es publicable y ejecuta el build en `prepack`; todavía no tiene workflow de publicación.
+- El paquete raíz ejecuta el build en `prepack` y tiene workflow de publicación con provenance, pendiente de configurar npm Trusted Publishing.
 - No se hicieron llamadas facturables, login real, instalación limpia del tarball ni publicación.
 - `npm pack` ejecuta el build; el tarball actual contiene 59 archivos/81,0 kB, incluida la licencia, y permite arrancar CLI e importar SDK desde el contenido extraído.
 
@@ -56,8 +56,8 @@ validación externa. Tener un adapter y tests simulados no resuelve ese punto.
 - [x] Corregir precedencia de skills por identidad: proyecto prevalece sobre usuario y `.mars` sobre `.forge`.
 - [x] Actualizar skills relevantes al cambiar de tarea y al retomar sesión.
 - [x] Compactar turnos antiguos completos al alcanzar el límite, conservando instrucciones y la tarea actual.
-- [ ] Añadir ejemplos completos de configuración global/proyecto, roles, permisos, skills y MCP.
-- [ ] Documentar dónde se guardan configuración, sesiones y credenciales, cómo borrarlas y cómo actualizar MARS.
+- [x] Añadir ejemplos completos de configuración global/proyecto, roles, permisos, skills y MCP.
+- [x] Documentar dónde se guardan configuración, sesiones y credenciales, cómo borrarlas y cómo actualizar MARS.
 - [ ] Validar primera instalación desde una cuenta/directorio limpio, sin estado del desarrollador.
 
 Compaction es una mejora de uso diario propuesta; el handoff la aplaza más allá del MVP.
@@ -69,7 +69,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [x] Completar metadata del paquete para `ALVZ93/mars`, licencia y enlaces de soporte.
 - [x] Preparar build previo a empaquetar, declarar types/exports y comprobar el contenido del tarball.
 - [ ] Probar instalación global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
-- [ ] Verificar binario ejecutable, exports SDK y dependencias nativas con Node soportado.
+- [x] Verificar binario ejecutable, exports SDK y dependencia nativa con Node 24 desde el tarball.
 - [ ] Confirmar nombre/scope y acceso de publicación npm; configurar release versionada y credencial de publicación apropiada.
 - [x] Ejecutar CI remota en Windows, macOS y Linux.
 - [ ] Ejecutar smoke tests reales de instalación y proveedores separados de los tests offline.

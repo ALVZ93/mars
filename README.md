@@ -48,6 +48,8 @@ mars "inspect the project and fix the failing tests" --verify
 
 La configuración de usuario se carga desde `%APPDATA%\\mars\\config.json` (Windows) o `~/.config/mars/config.json`; la configuración del proyecto vive en `.mars/config.json`. La precedencia es flags, entorno, proyecto, usuario y defaults. En `mcp.servers` se pueden declarar servidores stdio explícitos para las sesiones del proyecto:
 
+Guía completa de rutas, roles, permisos, skills, MCP, limpieza y actualización: [docs/configuration.md](docs/configuration.md).
+
 ```json
 {
   "mcp": {
@@ -64,7 +66,7 @@ pnpm mars run "offline fixture" --model fake:scripted --script examples/fake-scr
 
 ## Proveedores y autenticación
 
-La autenticación comparte una interfaz para API keys, OAuth PKCE y device code. Gemini puede usar OAuth Cloud con un cliente propio. Los adapters directos de suscripción de OpenAI Codex y Kimi son experimentales y están desactivados por defecto; Anthropic estable usa API key porque su política no permite login de claude.ai en productos de terceros no aprobados. Los tokens se refrescan cuando caducan. `createCredentialStore()` intenta usar Credential Manager/Keychain/Secret Service mediante `keytar` cuando está disponible en el runtime y cae a un archivo atómico por usuario cuando no lo está; el paquete base no fuerza una dependencia nativa.
+La autenticación comparte una interfaz para API keys, OAuth PKCE y device code. Gemini puede usar OAuth Cloud con un cliente propio. Los adapters directos de suscripción de OpenAI Codex y Kimi son experimentales y están desactivados por defecto; Anthropic estable usa API key porque su política no permite login de claude.ai en productos de terceros no aprobados. Los tokens se refrescan cuando caducan. `createCredentialStore()` usa Credential Manager, Keychain o Secret Service mediante `@napi-rs/keyring`; si el backend nativo no está disponible, falla de forma explícita.
 
 ```sh
 pnpm mars auth providers
@@ -88,7 +90,7 @@ pnpm mars login openrouter --api-key
 pnpm mars auth logout anthropic
 ```
 
-El login de navegador abre la URL y espera el callback local en `127.0.0.1`; el device code muestra la URL y el código. El backend se puede seleccionar con `MARS_CREDENTIAL_STORE=auto|keychain|file`; `auto` prefiere el almacén nativo y `file` deja un fallback de desarrollo en `%APPDATA%\\mars\\auth.json` en Windows o `~/.config/mars/auth.json` en macOS/Linux. El archivo nunca entra en el contexto del modelo.
+El login de navegador abre la URL y espera el callback local en `127.0.0.1`; el device code muestra la URL y el código. El backend se puede seleccionar con `MARS_CREDENTIAL_STORE=auto|keychain|file`; `auto` y `keychain` exigen el almacén nativo. `file` es una elección explícita de desarrollo que guarda JSON en `%APPDATA%\\mars\\auth.json` en Windows o `~/.config/mars/auth.json` en macOS/Linux. El archivo nunca entra en el contexto del modelo.
 
 ## OpenAI
 
@@ -199,7 +201,7 @@ En el SDK, `roleProviders` permite fijar un provider/model por rol (`planner`, `
 
 Las pruebas no consumen tokens: fake provider, OAuth contra servidores simulados, transportes SSE de Codex/Claude/Kimi/Gemini/Qwen, tools reales, procesos, sesiones, routing, workflows y CLI. Los tests offline no prueban disponibilidad ni permisos de una cuenta real.
 
-Se incluye CI para Windows/macOS/Linux; la ejecución local se ha comprobado en Windows. La telemetría remota no existe. El modo host de shell y los servidores MCP siguen siendo procesos del host; el modo Docker es opt-in y requiere Docker e imagen confiable. Windows Sandbox nativo, imágenes reproducibles y publicación npm quedan para el siguiente milestone. El paquete sigue privado y no se ha publicado en npm.
+La CI valida Windows, macOS y Linux, incluida la instalación local y global del tarball, `npx`, `pnpm dlx`, el binario y los exports SDK. La telemetría remota no existe. El modo host de shell y los servidores MCP siguen siendo procesos del host; el modo Docker es opt-in y requiere Docker e imagen confiable. Windows Sandbox nativo, imágenes reproducibles y publicación npm quedan para el siguiente milestone. El paquete es público en GitHub y todavía no se ha publicado en npm.
 
 Decisiones: [docs/decisions/001-v0.1.md](docs/decisions/001-v0.1.md).
 

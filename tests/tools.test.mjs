@@ -88,11 +88,13 @@ test('approved platform shell returns output, nonzero exit and bounded output', 
 test('shell timeout and cancellation terminate running commands', async t => {
   const { execute, root } = await setup(t, new Permissions('allow'));
   await writeFile(path.join(root, 'wait.cjs'), 'setTimeout(() => {}, 30000);');
+  const startedAt = Date.now();
   assert.equal((await execute('shell', { command: 'node wait.cjs', cwd: null, timeout: 100 })).error, 'TimeoutError');
   const controller = new AbortController();
   const run = execute('shell', { command: 'node wait.cjs', cwd: null, timeout: 10000 }, controller.signal);
   setTimeout(() => controller.abort(), 100);
   await assert.rejects(run, { code: 'CancelledError' });
+  assert.ok(Date.now() - startedAt < 10_000, 'shell termination must not wait for the child command timeout');
 });
 test('shell environment uses an allowlist rather than inheriting credentials or runtime injection', () => {
   assert.deepEqual(shellEnvironment({ PATH: '/bin', HOME: '/home/user', OPENAI_API_KEY: 'secret', AWS_SECRET_ACCESS_KEY: 'secret', NODE_OPTIONS: '--require injected', BASH_ENV: '/evil', CUSTOM_PASSWORD: 'secret' }), { PATH: '/bin', HOME: '/home/user' });
