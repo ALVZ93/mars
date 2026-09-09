@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title desc">
+  <title id="title">Dithered Mars planet</title>
+  <desc id="desc">A Mars red halftone planet drawn as a printed editorial mark.</desc>
+  <defs>
+    <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse">
+      <circle cx="2.5" cy="2.5" r="1.8" fill="#F7F2EB" opacity=".36"/>
+      <circle cx="8.5" cy="8.5" r="1.1" fill="#F7F2EB" opacity=".2"/>
+    </pattern>
+    <clipPath id="planet">
+      <circle cx="400" cy="400" r="302"/>
+    </clipPath>
+    <filter id="roughen" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="17" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="4"/>
+    </filter>
+  </defs>
+  <circle cx="400" cy="400" r="302" fill="#8B1E16"/>
+  <g clip-path="url(#planet)" filter="url(#roughen)">
+    <path d="M93 272C169 201 273 190 330 242c38 35 27 77-10 101-52 33-75 83-45 130 31 48 7 106-72 132L58 628 22 385z" fill="#B51E16"/>
+    <path d="M419 86c104 19 192 76 257 167 35 49 35 102 5 131-43 42-82 17-114-21-41-48-79-44-99-7-24 43-70 43-102 5-34-42-33-101 20-139 52-37 65-78 33-136z" fill="#A9493A"/>
+    <path d="M486 469c57-42 120-29 144 20 25 50 5 104-38 137-62 47-146 53-200 0-43-42-30-93 20-112 29-11 49-25 74-45z" fill="#B51E16"/>
+    <path d="M221 510c40-26 87-18 105 15 22 38 5 74-33 95-52 28-111 20-138-16-21-28-9-69 66-94z" fill="#8B1E16"/>
+    <rect x="55" y="63" width="700" height="700" fill="url(#dots)" opacity=".8"/>
+    <path d="M69 347c136-84 284-91 432-27 100 43 174 48 250 12M42 548c114-39 218-31 319 18 101 49 207 51 373-23M285 94c-14 106 16 177 88 236 74 60 89 139 44 250" fill="none" stroke="#F7F2EB" stroke-width="7" opacity=".18"/>
+  </g>
+  <circle cx="400" cy="400" r="302" fill="none" stroke="#B51E16" stroke-width="16"/>
+  <circle cx="400" cy="400" r="316" fill="none" stroke="#D7A692" stroke-width="2" stroke-dasharray="2 12" opacity=".7"/>
+</svg>

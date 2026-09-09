@@ -1,0 +1,61 @@
+{
+  "name": "@alvz/mars",
+  "version": "0.1.0",
+  "description": "MARS — provider-independent agent harness CLI",
+  "type": "module",
+  "private": false,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ALVZ93/mars.git"
+  },
+  "homepage": "https://github.com/ALVZ93/mars#readme",
+  "bugs": {
+    "url": "https://github.com/ALVZ93/mars/issues"
+  },
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "mars": "dist/apps/cli/src/index.js",
+    "forge": "dist/apps/cli/src/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/packages/sdk/src/index.d.ts",
+      "import": "./dist/packages/sdk/src/index.js"
+    }
+  },
+  "types": "./dist/packages/sdk/src/index.d.ts",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test": "pnpm build && node --test tests/*.test.mjs",
+    "site": "node apps/site/server.mjs",
+    "mars": "node dist/apps/cli/src/index.js",
+    "forge": "node dist/apps/cli/src/index.js"
+  },
+  "dependencies": {
+    "openai": "^6.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.npm-cache/
+.pnpm-store/
+.release-test/
+.env
+.env.*
+*.tgz
+.forge/
+.mars/
+hello.txt

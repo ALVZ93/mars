@@ -1,0 +1,152 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#8B1E16">
+    <meta name="description" content="MARS is a programmable harness for coordinating models, agents, tools and context from one runtime.">
+    <title>MARS â€” AI agent harness</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="site-shell paper">
+      <header class="site-header" data-header>
+        <a class="wordmark" href="#top" aria-label="MARS home">
+          <span class="wordmark-mark" aria-hidden="true">M</span>
+          <span>MARS</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Primary navigation">
+          <a href="#product">Product</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#install">Install</a>
+        </nav>
+        <a class="button button-primary header-cta" href="#install">Get started</a>
+        <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-nav">
+          <span>Menu</span>
+        </button>
+        <div class="mobile-nav" id="mobile-nav" hidden>
+          <a href="#product">Product</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#install">Install</a>
+          <a class="button button-primary" href="#install">Get started</a>
+        </div>
+      </header>
+
+      <section class="hero editorial-section" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">#0 AI agent harness</p>
+          <h1 id="hero-title">Many models.<br><em>One system.</em></h1>
+          <p class="hero-lede">MARS is a programmable harness for coordinating models, agents, tools and context from one runtime.</p>
+          <div class="button-row">
+            <a class="button button-primary" href="#install">Get started</a>
+            <a class="button button-secondary" href="#how-it-works">See the runtime</a>
+          </div>
+        </div>
+        <div class="hero-art reveal reveal-delay" aria-hidden="true">
+          <img class="hero-reference" src="/brand/mars-reference.png" alt="" fetchpriority="high"><img class="hero-planet" src="/brand/mars-planet-halftone.svg" alt="">
+          <p class="hero-art-label">MARS / RUNTIME<br>MMXXVI</p>
+        </div>
+        <div class="hero-foot">
+          <span>MODEL</span><span>PROVIDER</span><span>TOOL</span><span>CONTEXT</span><span>RUN</span>
+        </div>
+      </section>
+
+      <section class="editorial-section split-section" id="product" aria-labelledby="orchestrate-title">
+        <div class="section-index reveal">#1<br>ORCHESTRATE</div>
+        <div class="section-copy reveal reveal-delay">
+          <h2 id="orchestrate-title">Many models<br><em>one harness.</em></h2>
+          <p>Route work to the right model. Coordinate specialized agents. Keep execution under one control plane.</p>
+          <div class="metadata-list" aria-label="Runtime primitives">
+            <span>MODEL ROUTER</span>
+            <span>AGENT LOOP</span>
+            <span>TOOL CALLS</span>
+            <span>SHARED RULES</span>
+          </div>
+        </div>
+        <div class="topology reveal reveal-delay-2" aria-label="MARS runtime topology">
+          <div class="topology-node topology-root">MARS</div>
+          <div class="topology-branch">
+            <div class="topology-node">PLANNER</div>
+            <div class="topology-node">CODE AGENT</div>
+            <div class="topology-node">REVIEWER</div>
+          </div>
+          <div class="topology-line" aria-hidden="true"></div>
+          <div class="topology-node topology-output">OUTPUT</div>
+        </div>
+      </section>
+
+      <section class="editorial-section context-section" aria-labelledby="context-title">
+        <div class="context-art reveal">
+          <img src="/brand/mars-bust-halftone.svg" alt="" loading="lazy">
+          <span class="art-caption">ARCHIVE / 02</span>
+        </div>
+        <div class="section-copy context-copy reveal reveal-delay">
+          <div class="section-index">#2<br>REMEMBER</div>
+          <h2 id="context-title">Persistent<br><em>context.</em></h2>
+          <p>Project state, shared rules and working context should survive beyond a single agent run.</p>
+          <div class="metadata-list">
+            <span>PROJECT MEMORY</span>
+            <span>WORKSPACE STATE</span>
+            <span>TOOL OBSERVATIONS</span>
+            <span>LONG-RUN TASKS</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="editorial-section execute-section" aria-labelledby="execute-title">
+        <div class="execute-copy reveal">
+          <div class="section-index">#3<br>EXECUTE</div>
+          <h2 id="execute-title">Deploy<br><em>anywhere.</em></h2>
+          <p>Run locally, connect remote providers, or extend the harness to your own infrastructure.</p>
+        </div>
+        <div class="execute-art reveal reveal-delay">
+          <img src="/brand/mars-planet-halftone.svg" alt="" loading="lazy">
+          <div class="execute-stamp">LOCAL<br>CLOUD<br>YOUR INFRASTRUCTURE</div>
+        </div>
+      </section>
+
+      <section class="install-section" id="install" aria-labelledby="install-title">
+        <div class="install-heading reveal">
+          <p class="eyebrow">Runtime / 0.1</p>
+          <h2 id="install-title">Start with<br><em>the harness.</em></h2>
+        </div>
+        <div class="install-panel reveal reveal-delay">
+          <div class="install-panel-top">
+            <span>LOCAL COMMAND</span>
+            <span>NODE 24 Â· PNPM 11</span>
+          </div>
+          <code id="install-command">pnpm mars run "inspect package.json" --model fake:scripted</code>
+          <button class="copy-button" type="button" data-copy="#install-command">Copy command</button>
+          <p class="copy-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="how-section" id="how-it-works" aria-labelledby="how-title">
+        <div class="section-index reveal">SYSTEM / 01</div>
+        <div class="how-copy reveal reveal-delay">
+          <h2 id="how-title">A clear path<br><em>from task to result.</em></h2>
+          <ol class="flow">
+            <li><span>01</span><strong>USER</strong><small>intent</small></li>
+            <li><span>02</span><strong>MARS</strong><small>route + govern</small></li>
+            <li><span>03</span><strong>TOOLS</strong><small>read + write + run</small></li>
+            <li><span>04</span><strong>OUTPUT</strong><small>reviewed result</small></li>
+          </ol>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="footer-top">
+          <span class="wordmark"><span class="wordmark-mark" aria-hidden="true">M</span>MARS</span>
+          <span class="footer-label">BUILD WHAT COMES NEXT.</span>
+        </div>
+        <div class="footer-bottom">
+          <span>Â© MMXXVI MARS</span>
+          <span>AGENT HARNESS / OPEN RUNTIME</span>
+          <a href="#top">BACK TO TOP â†‘</a>
+        </div>
+      </footer>
+    </main>
+    <script type="module" src="/script.js"></script>
+  </body>
+</html>
+

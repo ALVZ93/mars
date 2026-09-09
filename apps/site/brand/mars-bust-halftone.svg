@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 780" role="img" aria-labelledby="title desc">
+  <title id="title">Dithered Mars bust</title>
+  <desc id="desc">A cropped, red halftone bust used as a decorative MARS brand artifact.</desc>
+  <defs>
+    <pattern id="dots" width="10" height="10" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.6" fill="#F7F2EB" opacity=".42"/>
+      <circle cx="7.5" cy="7.5" r="1" fill="#F7F2EB" opacity=".18"/>
+    </pattern>
+    <clipPath id="silhouette">
+      <path d="M83 779c9-102 39-158 118-192l76-34 3-53c-39-29-62-77-66-133l-22-19c-9-8-7-24 6-29l18-7c3-83 61-143 151-143 85 0 145 59 145 146l17 8c12 6 13 22 2 30l-21 15c-3 58-27 106-66 135v51l78 36c72 33 105 91 108 190z"/>
+    </clipPath>
+  </defs>
+  <path d="M83 779c9-102 39-158 118-192l76-34 3-53c-39-29-62-77-66-133l-22-19c-9-8-7-24 6-29l18-7c3-83 61-143 151-143 85 0 145 59 145 146l17 8c12 6 13 22 2 30l-21 15c-3 58-27 106-66 135v51l78 36c72 33 105 91 108 190z" fill="#8B1E16"/>
+  <g clip-path="url(#silhouette)">
+    <path d="M111 220c23-107 88-165 192-165 87 0 159 50 181 142-56-27-102-35-161-11-78 31-125 39-212 34z" fill="#B51E16"/>
+    <path d="M274 185c39-33 90-42 140-19l41 21-20 24c-31 35-47 71-44 122-8 47-31 81-69 102-42-21-66-59-72-111l-17-29c-7-11 1-22 13-22h27c-11-38-11-62 1-88z" fill="#A9493A"/>
+    <path d="M375 208c22-1 47 12 60 34l-5 53-39 6c-18-22-29-52-16-93z" fill="#F7F2EB" opacity=".2"/>
+    <path d="M253 407c44 19 91 18 139-4-11 61-38 93-73 111-38-15-57-47-66-107z" fill="#B51E16"/>
+    <path d="M120 657c118-49 253-63 389-22l79 144H58z" fill="#B51E16"/>
+    <rect x="45" y="26" width="540" height="760" fill="url(#dots)" opacity=".9"/>
+    <path d="M99 331c107-44 216-35 334 18M109 501c102-63 243-61 403 6M92 620c131-44 275-37 443 22" fill="none" stroke="#F7F2EB" stroke-width="5" opacity=".2"/>
+  </g>
+  <path d="M83 779c9-102 39-158 118-192l76-34 3-53c-39-29-62-77-66-133l-22-19c-9-8-7-24 6-29l18-7c3-83 61-143 151-143 85 0 145 59 145 146l17 8c12 6 13 22 2 30l-21 15c-3 58-27 106-66 135v51l78 36c72 33 105 91 108 190" fill="none" stroke="#B51E16" stroke-width="9"/>
+</svg>
