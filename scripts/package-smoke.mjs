@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,8 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const root = await mkdtemp(path.join(tmpdir(), 'mars-package-smoke-'));
+const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+const expectedVersion = packageJson.version;
 
 async function run(command, args, cwd) {
   const windowsCommand = process.platform === 'win32' && command.toLowerCase().endsWith('.cmd');
@@ -32,8 +34,8 @@ try {
   await run(npm, ['install', '--ignore-scripts', '--no-audit', '--no-fund', tarball], consumer);
 
   const localBin = path.join(consumer, 'node_modules', '.bin', process.platform === 'win32' ? 'mars.cmd' : 'mars');
-  assert.equal((await run(localBin, ['--version'], consumer)).stdout.trim(), '0.1.0');
-  assert.equal((await run(npx, ['--no-install', 'mars', '--version'], consumer)).stdout.trim(), '0.1.0');
+  assert.equal((await run(localBin, ['--version'], consumer)).stdout.trim(), expectedVersion);
+  assert.equal((await run(npx, ['--no-install', 'mars', '--version'], consumer)).stdout.trim(), expectedVersion);
 
   const sdkSmoke = path.join(consumer, 'sdk-smoke.mjs');
   await writeFile(sdkSmoke, "import { createForge, FakeProvider, keychainAvailable } from '@alvz/mars';\nif (typeof createForge !== 'function' || typeof FakeProvider !== 'function' || !keychainAvailable()) process.exit(1);\n");
@@ -42,8 +44,8 @@ try {
   const globalRoot = path.join(root, 'global');
   await run(npm, ['install', '--global', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', globalRoot, tarball], consumer);
   const globalBin = process.platform === 'win32' ? path.join(globalRoot, 'mars.cmd') : path.join(globalRoot, 'bin', 'mars');
-  assert.equal((await run(globalBin, ['--version'], consumer)).stdout.trim(), '0.1.0');
-  assert.match((await run(pnpm, ['dlx', tarball, '--version'], consumer)).stdout, /0\.1\.0/);
+  assert.equal((await run(globalBin, ['--version'], consumer)).stdout.trim(), expectedVersion);
+  assert.match((await run(pnpm, ['dlx', tarball, '--version'], consumer)).stdout, new RegExp(expectedVersion.replaceAll('.', '\\.')));
 
   console.log(`Package smoke passed on ${process.platform}/${process.arch}.`);
 } finally {

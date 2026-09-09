@@ -13,7 +13,7 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
 - La matriz CI pasa en Windows, macOS y Linux sobre el commit público `ac81aa4`.
 - El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
-- El paquete raíz ejecuta el build en `prepack` y tiene workflow de publicación con provenance, pendiente de configurar npm Trusted Publishing.
+- El paquete raíz ejecuta el build en `prepack`; el workflow verifica tag/versión, repite tests y publica con provenance, pendiente de configurar npm Trusted Publishing.
 - No se hicieron llamadas facturables, login real ni publicación npm.
 - `npm pack` ejecuta el build; la CI instala el tarball en un directorio limpio y valida instalación local/global, `npx`, `pnpm dlx`, binario, exports SDK y carga del keyring nativo.
 
@@ -70,7 +70,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [x] Preparar build previo a empaquetar, declarar types/exports y comprobar el contenido del tarball.
 - [x] Probar instalación local/global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
 - [x] Verificar binario ejecutable, exports SDK y dependencia nativa con Node 24 desde el tarball.
-- [ ] Confirmar nombre/scope y acceso de publicación npm; configurar release versionada y credencial de publicación apropiada.
+- [ ] Crear `@alvz/mars` con la primera publicación autenticada y configurar npm Trusted Publishing según `docs/releasing.md`.
 - [x] Ejecutar CI remota en Windows, macOS y Linux.
 - [ ] Ejecutar smoke tests reales de instalación y proveedores separados de los tests offline.
 - [x] Actualizar README para que los límites y la política de autenticación coincidan con el código.

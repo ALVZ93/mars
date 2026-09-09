@@ -48,7 +48,7 @@ mars "inspect the project and fix the failing tests" --verify
 
 La configuración de usuario se carga desde `%APPDATA%\\mars\\config.json` (Windows) o `~/.config/mars/config.json`; la configuración del proyecto vive en `.mars/config.json`. La precedencia es flags, entorno, proyecto, usuario y defaults. En `mcp.servers` se pueden declarar servidores stdio explícitos para las sesiones del proyecto:
 
-Guía completa de rutas, roles, permisos, skills, MCP, limpieza y actualización: [docs/configuration.md](docs/configuration.md).
+Guía completa de rutas, roles, permisos, skills, MCP, limpieza y actualización: [docs/configuration.md](docs/configuration.md). El proceso de publicación está en [docs/releasing.md](docs/releasing.md).
 
 ```json
 {
