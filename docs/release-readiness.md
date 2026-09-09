@@ -43,7 +43,7 @@ Los adapters de suscripción incluyen client IDs por defecto; la matriz actual n
 demuestra autorización oficial para que MARS los use como cliente de terceros.
 
 - [ ] Almacenamiento nativo probado en cada plataforma; archivo solo mediante elección explícita de desarrollo.
-- [ ] Definir recuperación/migración de credenciales y fallo claro sin backend nativo.
+- [x] Definir migración comprobada del archivo al llavero y fallo claro sin backend nativo.
 - [x] Auditar con documentación oficial vigente qué flujos de suscripción son admitidos para MARS.
 - [x] Resolver el desacuerdo entre el handoff y ADR 002: Anthropic browser auth queda bloqueado; OpenAI Codex y Kimi quedan experimentales y desactivados por defecto.
 - [ ] Validar login, refresh, logout y tool calls con cuentas reales de los proveedores que se anuncien.

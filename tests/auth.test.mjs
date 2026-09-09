@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { MemoryCredentialStore, KeychainCredentialStore, resolveCredential, BrowserOAuthProvider, AuthRegistry, createCredentialStore } from '../dist/packages/auth/src/index.js';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { MemoryCredentialStore, FileCredentialStore, KeychainCredentialStore, resolveCredential, BrowserOAuthProvider, AuthRegistry, createCredentialStore, migrateFileCredentials } from '../dist/packages/auth/src/index.js';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -28,6 +28,22 @@ test('keychain credential adapter keeps the same store contract', async () => {
   assert.deepEqual(await store.get('openai'), { provider: 'openai', kind: 'api-key', secret: 'keychain-secret' });
   await store.delete('openai');
   assert.equal(await store.get('openai'), undefined);
+});
+
+test('file credentials migrate only after the keychain copy is verified', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'mars-auth-migrate-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = new FileCredentialStore(path.join(root, 'auth.json'));
+  await source.set({ provider: 'openai', kind: 'api-key', secret: 'migration-secret' });
+  const target = new MemoryCredentialStore();
+  assert.deepEqual(await migrateFileCredentials(source, target), ['openai']);
+  assert.equal((await target.get('openai')).secret, 'migration-secret');
+  await assert.rejects(stat(source.path), { code: 'ENOENT' });
+
+  const retained = new FileCredentialStore(path.join(root, 'retained.json'));
+  await retained.set({ provider: 'openai', kind: 'api-key', secret: 'keep-me' });
+  await assert.rejects(migrateFileCredentials(retained, { set: async () => {}, get: async () => undefined, delete: async () => {} }), { code: 'ConfigurationError' });
+  assert.equal((await retained.get('openai')).secret, 'keep-me');
 });
 
 test('credential resolution: explicit > store > environment > unauthenticated', async () => {

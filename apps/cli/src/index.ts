@@ -11,7 +11,7 @@ import {
   GeminiProvider, GoogleGeminiAuthProvider, KimiCodeAuthProvider, KimiCodeProvider, OpenAICodexAuthProvider,
   OpenAICodexProvider, OpenAIProvider, QwenProvider, SkillRegistry, MODEL_CATALOG, Workspace, projectConfigPath,
   OpenRouterProvider, OllamaProvider, Permissions, createSandboxShell, sandboxStatus,
-  loadConfig, readEventLogEntries, routeTask, runProjectChecks, refreshCredential, resolveAuthCredential, resolveCredential,
+  loadConfig, readEventLogEntries, routeTask, runProjectChecks, refreshCredential, resolveAuthCredential, resolveCredential, migrateFileCredentials,
   openBrowser, saveConfig, createForge,
 } from '../../../packages/sdk/src/index.js';
 import type { AuthContext, AuthProvider, CredentialStore, ModelProvider, RouteDecision, VerificationReport } from '../../../packages/sdk/src/index.js';
@@ -51,6 +51,7 @@ Authentication:
   mars auth providers
   mars auth status
   mars auth logout PROVIDER
+  mars auth migrate                    Move file credentials to the native keychain
   MARS_CREDENTIAL_STORE=auto|keychain|file
   MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH=1 (development only)
 
@@ -176,7 +177,12 @@ async function authCommand(positionals: string[], credentials: CredentialStore):
     process.stdout.write(`${providerId}: disconnected.\n`);
     return;
   }
-  throw new ForgeError('ConfigurationError', 'Use auth providers, auth status o auth logout PROVIDER.');
+  if (action === 'migrate' && positionals.length === 2) {
+    const providers = await migrateFileCredentials();
+    process.stdout.write(providers.length ? `Migrated to the native keychain: ${providers.join(', ')}.\n` : 'No file credentials found.\n');
+    return;
+  }
+  throw new ForgeError('ConfigurationError', 'Use auth providers, auth status, auth logout PROVIDER or auth migrate.');
 }
 
 function positive(value: string | undefined, fallback: number): number {

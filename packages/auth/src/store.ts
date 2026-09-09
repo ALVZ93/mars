@@ -66,6 +66,19 @@ export class FileCredentialStore implements CredentialStore {
     });
   }
 
+  async list(): Promise<Credential[]> {
+    return this.#serial(async () => Object.values(await this.#read()).map(clone));
+  }
+
+  async remove(): Promise<void> {
+    await this.#serial(async () => {
+      try { await unlink(this.path); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ForgeError('ConfigurationError', 'Could not remove the MARS file credential store.');
+      }
+    });
+  }
+
   async #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);
     this.#queue = next.then(() => {}, () => {});
@@ -168,6 +181,16 @@ export class KeychainCredentialStore implements CredentialStore {
 
 export type CredentialStoreMode = 'auto' | 'file' | 'keychain';
 export function keychainAvailable(): boolean { return Boolean(loadKeytar()); }
+export async function migrateFileCredentials(source = new FileCredentialStore(), target: CredentialStore = new KeychainCredentialStore()): Promise<string[]> {
+  const credentials = await source.list();
+  for (const credential of credentials) {
+    await target.set(credential);
+    const copied = await target.get(credential.provider);
+    if (!copied || JSON.stringify(copied) !== JSON.stringify(credential)) throw new ForgeError('ConfigurationError', `Could not verify migrated credential for ${credential.provider}.`);
+  }
+  await source.remove();
+  return credentials.map(credential => credential.provider);
+}
 export function createCredentialStore(options: { mode?: CredentialStoreMode; filePath?: string; service?: string } = {}): CredentialStore {
   const mode = options.mode ?? (process.env.MARS_CREDENTIAL_STORE as CredentialStoreMode | undefined) ?? 'auto';
   if (!['auto', 'file', 'keychain'].includes(mode)) throw new ForgeError('ConfigurationError', 'MARS_CREDENTIAL_STORE must be auto, file or keychain.');

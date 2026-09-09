@@ -65,7 +65,7 @@ export class MemoryCredentialStore implements CredentialStore {
   async delete(provider: string) { this.#credentials.delete(provider); }
 }
 
-export { FileCredentialStore, KeychainCredentialStore, createCredentialStore, defaultCredentialPath, isCredential, keychainAvailable, type CredentialStoreMode } from './store.js';
+export { FileCredentialStore, KeychainCredentialStore, createCredentialStore, defaultCredentialPath, isCredential, keychainAvailable, migrateFileCredentials, type CredentialStoreMode } from './store.js';
 
 const environmentNames: Record<string, string[]> = {
   openai: ['OPENAI_API_KEY'],

@@ -95,8 +95,9 @@ Una skill de proyecto vive en `.mars/skills/<nombre>/SKILL.md`; una skill person
 
 ```sh
 mars auth logout PROVIDER
+mars auth migrate
 mars evidence clear
 npm install --global @alvz/mars@latest
 ```
 
-Para borrar historial local, elimina `.mars/sessions` y `.mars/events.jsonl` dentro del workspace. Para reiniciar la configuración, elimina el `config.json` correspondiente. El logout borra la entrada del proveedor del almacén nativo; no elimines todo el llavero del sistema.
+`mars auth migrate` copia el antiguo `auth.json` al llavero nativo, verifica cada entrada y solo después elimina el archivo. Si una copia falla, conserva el archivo completo para poder reintentar. Para borrar historial local, elimina `.mars/sessions` y `.mars/events.jsonl` dentro del workspace. Para reiniciar la configuración, elimina el `config.json` correspondiente. El logout borra la entrada del proveedor del almacén nativo; no elimines todo el llavero del sistema.
