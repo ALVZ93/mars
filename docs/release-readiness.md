@@ -11,11 +11,11 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - Existen core independiente, SDK, CLI interactiva, streaming, tools, sesiones y configuración.
 - Hay adapters reales y fake, API keys, flujos OAuth/device, refresh y logout.
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
-- La matriz CI pasa en Windows, macOS y Linux sobre el commit público `f92d171`.
+- La matriz CI pasa en Windows, macOS y Linux sobre el commit público `ac81aa4`.
 - El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
 - El paquete raíz ejecuta el build en `prepack` y tiene workflow de publicación con provenance, pendiente de configurar npm Trusted Publishing.
-- No se hicieron llamadas facturables, login real, instalación limpia del tarball ni publicación.
-- `npm pack` ejecuta el build; el tarball actual contiene 59 archivos/81,0 kB, incluida la licencia, y permite arrancar CLI e importar SDK desde el contenido extraído.
+- No se hicieron llamadas facturables, login real ni publicación npm.
+- `npm pack` ejecuta el build; la CI instala el tarball en un directorio limpio y valida instalación local/global, `npx`, `pnpm dlx`, binario, exports SDK y carga del keyring nativo.
 
 ## Bloqueos antes de distribuir como herramienta estable
 
@@ -58,7 +58,7 @@ validación externa. Tener un adapter y tests simulados no resuelve ese punto.
 - [x] Compactar turnos antiguos completos al alcanzar el límite, conservando instrucciones y la tarea actual.
 - [x] Añadir ejemplos completos de configuración global/proyecto, roles, permisos, skills y MCP.
 - [x] Documentar dónde se guardan configuración, sesiones y credenciales, cómo borrarlas y cómo actualizar MARS.
-- [ ] Validar primera instalación desde una cuenta/directorio limpio, sin estado del desarrollador.
+- [x] Validar primera instalación desde un directorio limpio, sin estado del desarrollador.
 
 Compaction es una mejora de uso diario propuesta; el handoff la aplaza más allá del MVP.
 
@@ -68,7 +68,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [x] Publicar el proyecto bajo Apache-2.0, añadir LICENSE y conservar NOTICE en el paquete.
 - [x] Completar metadata del paquete para `ALVZ93/mars`, licencia y enlaces de soporte.
 - [x] Preparar build previo a empaquetar, declarar types/exports y comprobar el contenido del tarball.
-- [ ] Probar instalación global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
+- [x] Probar instalación local/global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
 - [x] Verificar binario ejecutable, exports SDK y dependencia nativa con Node 24 desde el tarball.
 - [ ] Confirmar nombre/scope y acceso de publicación npm; configurar release versionada y credencial de publicación apropiada.
 - [x] Ejecutar CI remota en Windows, macOS y Linux.
@@ -76,7 +76,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [x] Actualizar README para que los límites y la política de autenticación coincidan con el código.
 - [x] Añadir instrucciones de contribución, reporte privado de vulnerabilidades y changelog.
 
-La publicación y las decisiones de licencia/cuenta son pasos posteriores; no se han realizado en esta revisión.
+La licencia y el repositorio público están resueltos. La publicación npm espera autenticación y Trusted Publishing.
 
 ## Cobertura frente al roadmap del handoff
 
