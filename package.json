@@ -39,7 +39,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "test": "pnpm build && node --test tests/*.test.mjs",
+    "test": "pnpm build && node --test --test-concurrency=1 tests/*.test.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "site": "node apps/site/server.mjs",
     "mars": "node dist/apps/cli/src/index.js",

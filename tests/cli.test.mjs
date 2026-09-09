@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
-function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', FORGE_MODEL: '', ...env } }); }
+function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', FORGE_MODEL: '', MARS_CREDENTIAL_STORE: 'file', ...env } }); }
 test('CLI help, version and configuration failures', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'mars-cli-config-'));
   t.after(() => rm(root, { recursive: true, force: true }));

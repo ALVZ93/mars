@@ -350,7 +350,7 @@ test('OpenRouter and Ollama adapters are available without sharing provider inte
 test('compiled CLI completes an offline daily-driver flow with config, verification and sessions', async t => {
   const root = await tempRoot(t, 'mars-cli-v02-');
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'cli-fixture', scripts: { test: 'node -e "process.exit(0)"' } }));
-  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '' } });
+  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '', MARS_CREDENTIAL_STORE: 'file', APPDATA: root, XDG_CONFIG_HOME: root, USERPROFILE: root, HOME: root } });
   assert.equal(runCli(['init', '--workspace', root]).status, 0);
   assert.equal(runCli(['config', 'set', 'model.default', 'fake:scripted', '--workspace', root]).status, 0);
   const result = runCli(['run', 'inspect this fixture', '--workspace', root, '--verify', '--allow-shell', '--no-animation']);
