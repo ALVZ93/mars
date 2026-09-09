@@ -7,11 +7,11 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 
 ## Evidencia actual
 
-- `pnpm test`: build correcto y 69 tests aprobados, sin fallos ni skips, en Windows.
+- `pnpm test`: build correcto y 71 tests aprobados, sin fallos ni skips, en Windows.
 - Existen core independiente, SDK, CLI interactiva, streaming, tools, sesiones y configuración.
 - Hay adapters reales y fake, API keys, flujos OAuth/device, refresh y logout.
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
-- La matriz CI pasa en Windows, macOS y Linux sobre el commit público `ac81aa4`.
+- La matriz CI pasa en Windows, macOS y Linux sobre el commit público `3894d91`.
 - El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
 - El paquete raíz ejecuta el build en `prepack`; el workflow verifica tag/versión, repite tests y publica con provenance, pendiente de configurar npm Trusted Publishing.
 - No se hicieron llamadas facturables, login real ni publicación npm.
