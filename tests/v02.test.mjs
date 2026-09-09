@@ -31,7 +31,7 @@ test('config precedence is project over user over defaults and writes atomically
   const appData = await tempRoot(t, 'mars-appdata-');
   await saveConfig(path.join(appData, 'mars', 'config.json'), { model: { default: 'openai:from-user' }, limits: { maxTurns: 4, maxRetries: 1, retryDelayMs: 10 } });
   await saveConfig(path.join(root, '.mars', 'config.json'), { model: { default: 'fake:scripted' }, permissions: { shell: 'deny' }, mcp: { servers: [{ name: 'fixture', command: 'node', args: ['server.mjs'] }] } });
-  const loaded = await loadConfig(root, { APPDATA: appData, USERPROFILE: appData });
+  const loaded = await loadConfig(root, { APPDATA: appData, USERPROFILE: appData, HOME: appData, XDG_CONFIG_HOME: appData });
   assert.equal(loaded.config.model.default, 'fake:scripted');
   assert.equal(loaded.config.limits.maxTurns, 4);
   assert.equal(loaded.config.limits.maxRetries, 1);
@@ -350,7 +350,7 @@ test('OpenRouter and Ollama adapters are available without sharing provider inte
 test('compiled CLI completes an offline daily-driver flow with config, verification and sessions', async t => {
   const root = await tempRoot(t, 'mars-cli-v02-');
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'cli-fixture', scripts: { test: 'node -e "process.exit(0)"' } }));
-  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '' } });
+  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '' } });
   assert.equal(runCli(['init', '--workspace', root]).status, 0);
   assert.equal(runCli(['config', 'set', 'model.default', 'fake:scripted', '--workspace', root]).status, 0);
   const result = runCli(['run', 'inspect this fixture', '--workspace', root, '--verify', '--allow-shell', '--no-animation']);

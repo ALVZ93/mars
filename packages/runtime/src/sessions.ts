@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { ForgeError } from '../../core/src/index.js';
 import type { AgentMessage } from '../../core/src/index.js';
 
@@ -92,6 +92,12 @@ export class FileSessionStore implements SessionStore {
   }
   async list(workspace?: string): Promise<SessionSummary[]> {
     return this.#serial(async () => {
+      const requestedWorkspace = workspace
+        ? await realpath(workspace).catch(() => resolve(workspace))
+        : undefined;
+      const normalizedWorkspace = process.platform === 'win32'
+        ? requestedWorkspace?.toLowerCase()
+        : requestedWorkspace;
       let names: string[];
       try { names = await readdir(this.directory); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw new ForgeError('ConfigurationError', 'Could not list MARS sessions.'); }
@@ -102,7 +108,8 @@ export class FileSessionStore implements SessionStore {
         try {
           const raw = await readFile(join(this.directory, name), 'utf8');
           const session = parseSession(JSON.parse(raw));
-          if (workspace && session.workspace !== workspace) continue;
+          const sessionWorkspace = process.platform === 'win32' ? session.workspace.toLowerCase() : session.workspace;
+          if (normalizedWorkspace && sessionWorkspace !== normalizedWorkspace) continue;
           const last = session.messages.at(-1);
           results.push({ id: session.id, createdAt: session.createdAt, updatedAt: session.updatedAt, workspace: session.workspace, model: session.model, status: session.status, messageCount: session.messages.length, lastMessage: last?.content.slice(0, 120) });
         } catch { /* Ignore an incomplete snapshot while listing. */ }

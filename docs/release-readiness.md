@@ -12,7 +12,7 @@ Este documento registra pendientes; no certifica seguridad ni compatibilidad de 
 - Hay adapters reales y fake, API keys, flujos OAuth/device, refresh y logout.
 - Hay skills, routing, workflows, evidencia, eventos, MCP stdio y Docker, con alcance parcial.
 - Existe matriz CI Windows/macOS/Linux, pero esta revisión no ha ejecutado esos jobs remotos.
-- Esta carpeta no es un repositorio Git: `git status` devuelve «not a git repository».
+- El repositorio público está creado en `https://github.com/ALVZ93/mars` y `main` sigue a `origin/main`.
 - El paquete raíz ya es publicable y ejecuta el build en `prepack`; todavía no tiene workflow de publicación.
 - No se hicieron llamadas facturables, login real, instalación limpia del tarball ni publicación.
 - `npm pack` ejecuta el build; el tarball actual contiene 59 archivos/81,0 kB, incluida la licencia, y permite arrancar CLI e importar SDK desde el contenido extraído.
@@ -64,7 +64,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 
 ### 4. GitHub, paquete y release
 
-- [ ] Inicializar Git y crear el remoto público `ALVZ93/mars`; `gh` ya está autenticado como `ALVZ93`.
+- [x] Inicializar Git, crear el remoto público `ALVZ93/mars` y subir `main`.
 - [x] Publicar el proyecto bajo Apache-2.0, añadir LICENSE y conservar NOTICE en el paquete.
 - [x] Completar metadata del paquete para `ALVZ93/mars`, licencia y enlaces de soporte.
 - [x] Preparar build previo a empaquetar, declarar types/exports y comprobar el contenido del tarball.

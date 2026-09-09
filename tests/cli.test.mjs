@@ -7,14 +7,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
-function run(args) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', FORGE_MODEL: '' } }); }
-test('CLI help, version and configuration failures', () => {
-  assert.match(run(['--help']).stdout, /MARS 0.1/);
-  assert.match(run(['auth', 'providers']).stdout, /Google Gemini API/);
-  assert.equal(run(['--version']).stdout.trim(), '0.1.0');
-  assert.equal(run(['run', 'task']).status, 1);
-  assert.match(run(['run', 'task', '--model', 'openai:test']).stderr, /AuthenticationError/);
-  assert.equal(run(['run', 'task', '--model', 'fake:scripted', '--timeout', '-1']).status, 1);
+function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', FORGE_MODEL: '', ...env } }); }
+test('CLI help, version and configuration failures', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'mars-cli-config-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const isolatedEnv = { APPDATA: root, XDG_CONFIG_HOME: root, USERPROFILE: root, HOME: root };
+  assert.match(run(['--help'], isolatedEnv).stdout, /MARS 0.1/);
+  assert.match(run(['auth', 'providers'], isolatedEnv).stdout, /Google Gemini API/);
+  assert.equal(run(['--version'], isolatedEnv).stdout.trim(), '0.1.0');
+  assert.equal(run(['run', 'task', '--workspace', root], isolatedEnv).status, 1);
+  assert.match(run(['run', 'task', '--model', 'openai:test', '--workspace', root], isolatedEnv).stderr, /AuthenticationError/);
+  assert.equal(run(['run', 'task', '--model', 'fake:scripted', '--timeout', '-1', '--workspace', root], isolatedEnv).status, 1);
 });
 test('CLI offline fixture executes read → write → shell → final', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'forge-cli-'));
