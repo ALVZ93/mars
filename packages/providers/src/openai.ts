@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
-import { checkAbort, ForgeError } from '../../core/src/index.js';
+import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential } from '../../auth/src/index.js';
 
 export function toOpenAIMessages(messages: AgentMessage[]): ChatCompletionMessageParam[] {
@@ -27,7 +27,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   #secret: string;
   constructor(credential: ApiKeyCredential, options: OpenAICompatibleProviderOptions = {}) {
     this.id = options.providerId ?? credential.provider;
-    if (credential.provider !== this.id || credential.kind !== 'api-key' || !credential.secret.trim()) throw new ForgeError('AuthenticationError', 'An OpenAI-compatible API key is required.');
+    if (credential.provider !== this.id || credential.kind !== 'api-key' || !credential.secret.trim()) throw new MarsError('AuthenticationError', 'An OpenAI-compatible API key is required.');
     this.#secret = credential.secret;
     this.#client = new OpenAI({ apiKey: credential.secret, maxRetries: 0, timeout: 120_000, ...(options.baseUrl ? { baseURL: options.baseUrl } : {}), ...(options.fetch ? { fetch: options.fetch } : {}) });
   }
@@ -58,7 +58,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           size += choice.delta.content.length;
           yield { type: 'text', text: choice.delta.content };
         }
-        if (choice.delta.refusal) throw new ForgeError('ProviderUnavailableError', 'The provider declined the request.');
+        if (choice.delta.refusal) throw new MarsError('ProviderUnavailableError', 'The provider declined the request.');
         for (const part of choice.delta.tool_calls ?? []) {
           const call = pending.get(part.index) ?? { id: '', name: '', json: '' };
           call.id += part.id ?? '';
@@ -67,31 +67,31 @@ export class OpenAICompatibleProvider implements ModelProvider {
           size += (part.id?.length ?? 0) + (part.function?.name?.length ?? 0) + (part.function?.arguments?.length ?? 0);
           pending.set(part.index, call);
         }
-        if (size > 1_000_000 || pending.size > 100) throw new ForgeError('ContextLimitError', 'Provider output exceeded the limit.');
+        if (size > 1_000_000 || pending.size > 100) throw new MarsError('ContextLimitError', 'Provider output exceeded the limit.');
         if (choice.finish_reason) {
-          if (!['stop', 'tool_calls'].includes(choice.finish_reason)) throw new ForgeError('ProviderUnavailableError', 'The provider response was incomplete.');
+          if (!['stop', 'tool_calls'].includes(choice.finish_reason)) throw new MarsError('ProviderUnavailableError', 'The provider response was incomplete.');
           finished = true;
         }
       }
-      if (!finished) throw new ForgeError('ProviderUnavailableError', 'Provider stream ended prematurely.');
+      if (!finished) throw new MarsError('ProviderUnavailableError', 'Provider stream ended prematurely.');
       const toolCalls: ToolCall[] = [...pending.values()].map(call => {
-        if (!call.id || !call.name) throw new ForgeError('InvalidToolCallError', 'Incomplete tool call.');
+        if (!call.id || !call.name) throw new MarsError('InvalidToolCallError', 'Incomplete tool call.');
         let args: unknown;
         try { args = JSON.parse(call.json); }
-        catch { throw new ForgeError('InvalidToolCallError', 'Provider returned malformed tool arguments.'); }
+        catch { throw new MarsError('InvalidToolCallError', 'Provider returned malformed tool arguments.'); }
         return { id: call.id, name: call.name, arguments: args };
       });
       yield { type: 'done', message: { role: 'assistant', content, toolCalls }, usage };
     } catch (error) {
       checkAbort(signal);
-      if (error instanceof ForgeError) throw error;
+      if (error instanceof MarsError) throw error;
       if (error instanceof OpenAI.APIError) {
-        if (error.status === 401 || error.status === 403) throw new ForgeError('AuthenticationError', `${this.id} rejected the credential or model access.`);
-        if (error.status === 429) throw new ForgeError('RateLimitError', `${this.id} rate or quota limit reached.`);
+        if (error.status === 401 || error.status === 403) throw new MarsError('AuthenticationError', `${this.id} rejected the credential or model access.`);
+        if (error.status === 429) throw new MarsError('RateLimitError', `${this.id} rate or quota limit reached.`);
         const detail = error.message.replaceAll(this.#secret, '[redacted]').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replace(/\s+/g, ' ').trim().slice(0, 240);
-        throw new ForgeError('ProviderUnavailableError', `${this.id} rejected the request (HTTP ${error.status ?? 'unknown'}${detail ? `: ${detail}` : ''}). Check the model name and provider availability.`);
+        throw new MarsError('ProviderUnavailableError', `${this.id} rejected the request (HTTP ${error.status ?? 'unknown'}${detail ? `: ${detail}` : ''}). Check the model name and provider availability.`);
       }
-      throw new ForgeError('ProviderUnavailableError', `${this.id} request failed. Check connectivity and model availability.`);
+      throw new MarsError('ProviderUnavailableError', `${this.id} request failed. Check connectivity and model availability.`);
     } finally { stream?.controller.abort(); }
   }
 }

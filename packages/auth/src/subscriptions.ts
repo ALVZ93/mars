@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { AuthContext, AuthMethod, AuthProvider, AuthStatus, Credential, OAuthCredential } from './index.js';
 
 type FetchLike = typeof fetch;
@@ -17,9 +17,9 @@ const safeHttpUrl = (value: string): URL => {
     if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
     if (url.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error();
     return url;
-  } catch { throw new ForgeError('ConfigurationError', 'Authentication endpoint must use HTTPS.'); }
+  } catch { throw new MarsError('ConfigurationError', 'Authentication endpoint must use HTTPS.'); }
 };
-const abortError = (signal: AbortSignal): ForgeError => new ForgeError(
+const abortError = (signal: AbortSignal): MarsError => new MarsError(
   signal.reason?.name === 'TimeoutError' ? 'TimeoutError' : 'CancelledError',
   signal.reason?.name === 'TimeoutError' ? 'Authentication timed out.' : 'Authentication cancelled.',
 );
@@ -28,14 +28,14 @@ const requestJson = async (fetchImpl: FetchLike, input: string | URL, init: Requ
   try { response = await fetchImpl(input, { ...init, signal }); }
   catch (error) {
     if (signal.aborted) throw abortError(signal);
-    throw new ForgeError('AuthenticationError', 'Authentication request failed.');
+    throw new MarsError('AuthenticationError', 'Authentication request failed.');
   }
-  if (!response.ok) throw new ForgeError('AuthenticationError', 'Authentication request was rejected.');
+  if (!response.ok) throw new MarsError('AuthenticationError', 'Authentication request was rejected.');
   try {
     const value: unknown = await response.json();
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     return value as TokenShape;
-  } catch { throw new ForgeError('AuthenticationError', 'Authentication response was invalid.'); }
+  } catch { throw new MarsError('AuthenticationError', 'Authentication response was invalid.'); }
 };
 
 interface PkceConfig {
@@ -57,7 +57,7 @@ interface PkceConfig {
 }
 
 function parseOAuthToken(value: TokenShape, provider: string, fallbackRefresh?: string): OAuthCredential {
-  if (typeof value.access_token !== 'string' || !value.access_token) throw new ForgeError('AuthenticationError', 'Authentication response did not contain an access token.');
+  if (typeof value.access_token !== 'string' || !value.access_token) throw new MarsError('AuthenticationError', 'Authentication response did not contain an access token.');
   const refreshToken = typeof value.refresh_token === 'string' && value.refresh_token ? value.refresh_token : fallbackRefresh;
   const scope = typeof value.scope === 'string' ? value.scope.split(' ').filter(Boolean) : undefined;
   const expiresAt = secondsFrom(value.expires_in);
@@ -94,26 +94,26 @@ async function browserPkce(config: PkceConfig, context: AuthContext): Promise<OA
       if (url.pathname !== config.callbackPath) { response.writeHead(404).end(); return; }
       if (url.searchParams.get('state') !== state) {
         response.writeHead(400).end('Invalid authentication state.');
-        finish(new ForgeError('AuthenticationError', 'Authentication state validation failed.'));
+        finish(new MarsError('AuthenticationError', 'Authentication state validation failed.'));
         return;
       }
       const providerError = url.searchParams.get('error');
       if (providerError) {
         response.writeHead(400).end('MARS login was denied.');
-        finish(new ForgeError('AuthenticationError', 'Authentication was denied.'));
+        finish(new MarsError('AuthenticationError', 'Authentication was denied.'));
         return;
       }
       const code = url.searchParams.get('code');
       if (!code) {
         response.writeHead(400).end('Missing authorization code.');
-        finish(new ForgeError('AuthenticationError', 'Authentication response did not contain a code.'));
+        finish(new MarsError('AuthenticationError', 'Authentication response did not contain a code.'));
         return;
       }
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<p>MARS login complete. You can close this window.</p>');
       finish({ code });
     } catch {
       response.writeHead(400).end('Invalid callback.');
-      finish(new ForgeError('AuthenticationError', 'Invalid authentication callback.'));
+      finish(new MarsError('AuthenticationError', 'Invalid authentication callback.'));
     }
   });
   const abort = () => finish(abortError(context.signal));
@@ -125,7 +125,7 @@ async function browserPkce(config: PkceConfig, context: AuthContext): Promise<OA
       server.listen(config.callbackPort, '127.0.0.1', resolve);
     });
     const address = server.address();
-    if (!address || typeof address === 'string') throw new ForgeError('ConfigurationError', 'Could not allocate the authentication callback.');
+    if (!address || typeof address === 'string') throw new MarsError('ConfigurationError', 'Could not allocate the authentication callback.');
     const redirectUri = `http://localhost:${address.port}${config.callbackPath}`;
     const authorization = safeHttpUrl(config.authorizationEndpoint);
     authorization.search = new URLSearchParams({
@@ -135,7 +135,7 @@ async function browserPkce(config: PkceConfig, context: AuthContext): Promise<OA
     }).toString();
     context.notify?.({ type: 'auth-url', url: authorization.toString(), instructions: 'Completa el login en el navegador; MARS espera el callback local.' });
     await context.openUrl(authorization.toString());
-    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ForgeError('TimeoutError', 'Authentication timed out.')), config.timeoutMs ?? 120_000); });
+    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new MarsError('TimeoutError', 'Authentication timed out.')), config.timeoutMs ?? 120_000); });
     const result = await Promise.race([callback, timeout]);
     const bodyValues = { grant_type: 'authorization_code', client_id: config.clientId, code: result.code, redirect_uri: redirectUri, code_verifier: verifier, ...(config.tokenState ? { state } : {}), ...config.tokenParams };
     const format = config.tokenFormat ?? 'form';
@@ -146,13 +146,13 @@ async function browserPkce(config: PkceConfig, context: AuthContext): Promise<OA
     }, context.signal);
     return (config.parseToken ?? parseOAuthToken)(token, config.provider);
   } catch (error) {
-    if (error instanceof ForgeError) throw error;
+    if (error instanceof MarsError) throw error;
     if (context.signal.aborted) throw abortError(context.signal);
-    throw new ForgeError('AuthenticationError', 'Browser authentication failed.');
+    throw new MarsError('AuthenticationError', 'Browser authentication failed.');
   } finally {
     if (timer) clearTimeout(timer);
     context.signal.removeEventListener('abort', abort);
-    if (!settled) finish(new ForgeError('CancelledError', 'Authentication cancelled.'));
+    if (!settled) finish(new MarsError('CancelledError', 'Authentication cancelled.'));
     server.close();
   }
 }
@@ -173,11 +173,11 @@ async function pollDevice<T>(options: DevicePollOptions<T>): Promise<T> {
     first = false;
     const result = await options.poll();
     if (result.status === 'complete' && result.value !== undefined) return result.value;
-    if (result.status === 'failed') throw new ForgeError('AuthenticationError', result.message ?? 'Device authentication failed.');
+    if (result.status === 'failed') throw new MarsError('AuthenticationError', result.message ?? 'Device authentication failed.');
     if (result.status === 'slow_down') interval = Math.min(interval + 5, 30);
     if (!(first && options.waitBeforeFirstPoll)) await delay(interval * 1000, options.signal);
   }
-  throw new ForgeError('TimeoutError', 'Device authentication timed out.');
+  throw new MarsError('TimeoutError', 'Device authentication timed out.');
 }
 async function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) throw abortError(signal);
@@ -217,11 +217,11 @@ export class AnthropicAuthProvider implements AuthProvider {
   }
   methods(): readonly AuthMethod[] { return ['oauth-pkce']; }
   async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method !== 'oauth-pkce') throw new ForgeError('ConfigurationError', `${this.displayName} does not support ${method}.`);
+    if (method !== 'oauth-pkce') throw new MarsError('ConfigurationError', `${this.displayName} does not support ${method}.`);
     return browserPkce({ provider: this.id, clientId: this.#options.clientId, authorizationEndpoint: this.#options.authorizationEndpoint, tokenEndpoint: this.#options.tokenEndpoint, scopes: ANTHROPIC_SCOPES, callbackPath: '/callback', callbackPort: this.#options.callbackPort, timeoutMs: this.#options.timeoutMs, fetch: this.#options.fetch, tokenFormat: 'json', tokenState: true, stateFromVerifier: true, authorizationParams: { code: 'true' }, parseToken: parseOAuthToken }, context);
   }
   async refresh(credential: OAuthCredential, context: AuthContext): Promise<OAuthCredential> {
-    if (credential.provider !== this.id || !credential.refreshToken) throw new ForgeError('AuthenticationError', 'No refresh token is available.');
+    if (credential.provider !== this.id || !credential.refreshToken) throw new MarsError('AuthenticationError', 'No refresh token is available.');
     const value = await requestJson(this.#options.fetch ?? fetch, this.#options.tokenEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ grant_type: 'refresh_token', client_id: this.#options.clientId, refresh_token: credential.refreshToken }) }, context.signal);
     return parseOAuthToken(value, this.id, credential.refreshToken);
   }
@@ -247,13 +247,13 @@ export class KimiCodeAuthProvider implements AuthProvider {
   }
   methods(): readonly AuthMethod[] { return ['oauth-device']; }
   async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method !== 'oauth-device') throw new ForgeError('ConfigurationError', `${this.displayName} does not support ${method}.`);
+    if (method !== 'oauth-device') throw new MarsError('ConfigurationError', `${this.displayName} does not support ${method}.`);
     const response = await requestJson(this.#options.fetch ?? fetch, `${this.#options.oauthHost}/api/oauth/device_authorization`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: this.#options.clientId }) }, context.signal);
     const deviceCode = typeof response.device_code === 'string' ? response.device_code : undefined;
     const userCode = typeof response.user_code === 'string' ? response.user_code : undefined;
     const verificationUri = typeof response.verification_uri === 'string' ? response.verification_uri : undefined;
     const verificationUriComplete = typeof response.verification_uri_complete === 'string' ? response.verification_uri_complete : undefined;
-    if (!deviceCode || !userCode || !verificationUri || !verificationUriComplete) throw new ForgeError('AuthenticationError', 'Kimi device authentication response was invalid.');
+    if (!deviceCode || !userCode || !verificationUri || !verificationUriComplete) throw new MarsError('AuthenticationError', 'Kimi device authentication response was invalid.');
     safeHttpUrl(verificationUri); safeHttpUrl(verificationUriComplete);
     const interval = Number(response.interval);
     const expiresInSeconds = Number(response.expires_in);
@@ -276,7 +276,7 @@ export class KimiCodeAuthProvider implements AuthProvider {
     return parseOAuthToken(value, this.id);
   }
   async refresh(credential: OAuthCredential, context: AuthContext): Promise<OAuthCredential> {
-    if (credential.provider !== this.id || !credential.refreshToken) throw new ForgeError('AuthenticationError', 'No refresh token is available.');
+    if (credential.provider !== this.id || !credential.refreshToken) throw new MarsError('AuthenticationError', 'No refresh token is available.');
     const value = await requestJson(this.#options.fetch ?? fetch, `${this.#options.oauthHost}/api/oauth/token`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: this.#options.clientId, grant_type: 'refresh_token', refresh_token: credential.refreshToken }) }, context.signal);
     return parseOAuthToken(value, this.id, credential.refreshToken);
   }

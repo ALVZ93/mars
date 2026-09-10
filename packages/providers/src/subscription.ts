@@ -1,6 +1,6 @@
 import type { AssistantMessage, AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
 import { Codex } from '@openai/codex-sdk';
-import { checkAbort, ForgeError } from '../../core/src/index.js';
+import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 import { OpenAICompatibleProvider } from './openai.js';
 
@@ -19,7 +19,7 @@ function safeEndpoint(value: string): string {
     const url = new URL(value);
     if (url.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error();
     return url.toString();
-  } catch { throw new ForgeError('ConfigurationError', 'Provider endpoint must use HTTPS.'); }
+  } catch { throw new MarsError('ConfigurationError', 'Provider endpoint must use HTTPS.'); }
 }
 function asString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 function diagnostic(value: unknown): string | undefined {
@@ -51,21 +51,21 @@ async function sendRequest(fetchImpl: FetchLike, url: string, init: RequestInit,
     const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined;
     const code = error instanceof Error && error.cause && typeof error.cause === 'object' ? asString((error.cause as Json).code) : undefined;
     const detail = diagnostic([error instanceof Error ? error.message : undefined, cause, code].filter(Boolean).join(': '));
-    throw new ForgeError('ProviderUnavailableError', `${provider} request failed${detail ? ` (${detail})` : ''}. Check connectivity and model availability.`);
+    throw new MarsError('ProviderUnavailableError', `${provider} request failed${detail ? ` (${detail})` : ''}. Check connectivity and model availability.`);
   }
 }
 async function ensureOk(response: Response, provider: string): Promise<void> {
   if (response.ok) return;
   const detail = await responseDiagnostic(response);
   const suffix = ` (HTTP ${response.status}${detail ? `: ${detail}` : ''})`;
-  if (response.status === 401 || response.status === 403) throw new ForgeError('AuthenticationError', `${provider} rejected the credential or model access${suffix}.`);
-  if (response.status === 429) throw new ForgeError('RateLimitError', `${provider} rate or usage limit reached${suffix}.`);
-  if (response.status === 413) throw new ForgeError('ContextLimitError', `${provider} rejected the request because it is too large${suffix}.`);
-  throw new ForgeError('ProviderUnavailableError', `${provider} request failed${suffix}. Check connectivity and model availability.`);
+  if (response.status === 401 || response.status === 403) throw new MarsError('AuthenticationError', `${provider} rejected the credential or model access${suffix}.`);
+  if (response.status === 429) throw new MarsError('RateLimitError', `${provider} rate or usage limit reached${suffix}.`);
+  if (response.status === 413) throw new MarsError('ContextLimitError', `${provider} rejected the request because it is too large${suffix}.`);
+  throw new MarsError('ProviderUnavailableError', `${provider} request failed${suffix}. Check connectivity and model availability.`);
 }
 
 async function* sse(response: Response, signal: AbortSignal): AsyncGenerator<Json> {
-  if (!response.body) throw new ForgeError('ProviderUnavailableError', 'Provider returned no stream body.');
+  if (!response.body) throw new MarsError('ProviderUnavailableError', 'Provider returned no stream body.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -86,7 +86,7 @@ async function* sse(response: Response, signal: AbortSignal): AsyncGenerator<Jso
           try {
             const parsed: unknown = JSON.parse(data);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) yield parsed as Json;
-          } catch { throw new ForgeError('ProviderUnavailableError', 'Provider returned malformed streaming data.'); }
+          } catch { throw new MarsError('ProviderUnavailableError', 'Provider returned malformed streaming data.'); }
         }
         boundary = buffer.indexOf('\n\n');
       }
@@ -132,7 +132,7 @@ export class AnthropicProvider implements ModelProvider {
   readonly #url: string;
   readonly #maxTokens: number;
   constructor(credential: Credential, options: AnthropicTransportOptions = {}) {
-    if (credential.provider !== this.id || (credential.kind !== 'api-key' && credential.kind !== 'oauth')) throw new ForgeError('AuthenticationError', 'An Anthropic API key or browser credential is required.');
+    if (credential.provider !== this.id || (credential.kind !== 'api-key' && credential.kind !== 'oauth')) throw new MarsError('AuthenticationError', 'An Anthropic API key or browser credential is required.');
     this.#credential = credential;
     this.#fetch = options.fetch ?? fetch;
     this.#url = safeEndpoint(endpoint(options.baseUrl ?? 'https://api.anthropic.com', '/v1/messages'));
@@ -183,13 +183,13 @@ export class AnthropicProvider implements ModelProvider {
         if (value.type === 'input_json_delta' && typeof value.partial_json === 'string') {
           const index = typeof event.index === 'number' ? event.index : -1;
           const call = tools.get(index);
-          if (!call) throw new ForgeError('InvalidToolCallError', 'Anthropic returned an unknown tool call.');
+          if (!call) throw new MarsError('InvalidToolCallError', 'Anthropic returned an unknown tool call.');
           call.json += value.partial_json;
         }
       } else if (type === 'content_block_stop') {
         const index = typeof event.index === 'number' ? event.index : -1;
         const call = tools.get(index);
-        if (call && call.json) { try { call.input = JSON.parse(call.json); } catch { throw new ForgeError('InvalidToolCallError', 'Anthropic returned malformed tool arguments.'); } }
+        if (call && call.json) { try { call.input = JSON.parse(call.json); } catch { throw new MarsError('InvalidToolCallError', 'Anthropic returned malformed tool arguments.'); } }
       } else if (type === 'message_delta') {
         const delta = event.delta;
         const counts = event.usage;
@@ -199,14 +199,14 @@ export class AnthropicProvider implements ModelProvider {
         }
         const stop = delta && typeof delta === 'object' && !Array.isArray(delta) ? asString((delta as Json).stop_reason) : undefined;
         if (stop) sawStop = true;
-        if (stop && !['end_turn', 'tool_use', 'max_tokens', 'stop_sequence'].includes(stop)) throw new ForgeError('ProviderUnavailableError', 'Anthropic response was incomplete.');
+        if (stop && !['end_turn', 'tool_use', 'max_tokens', 'stop_sequence'].includes(stop)) throw new MarsError('ProviderUnavailableError', 'Anthropic response was incomplete.');
       } else if (type === 'message_stop') sawStop = true;
-      else if (type === 'error') throw new ForgeError('ProviderUnavailableError', 'Anthropic returned a streaming error.');
+      else if (type === 'error') throw new MarsError('ProviderUnavailableError', 'Anthropic returned a streaming error.');
     }
-    if (!sawStop) throw new ForgeError('ProviderUnavailableError', 'Anthropic stream ended prematurely.');
+    if (!sawStop) throw new MarsError('ProviderUnavailableError', 'Anthropic stream ended prematurely.');
     const toolCalls: ToolCall[] = [];
     for (const call of tools.values()) {
-      if (!call.id || !call.name || call.input === undefined) throw new ForgeError('InvalidToolCallError', 'Anthropic returned an incomplete tool call.');
+      if (!call.id || !call.name || call.input === undefined) throw new MarsError('InvalidToolCallError', 'Anthropic returned an incomplete tool call.');
       toolCalls.push({ id: call.id, name: call.name, arguments: call.input });
     }
     yield { type: 'done', message: { role: 'assistant', content, toolCalls }, usage };
@@ -217,7 +217,7 @@ export interface KimiCodeProviderOptions extends AnthropicTransportOptions {}
 export class KimiCodeProvider extends AnthropicProvider {
   readonly id = 'kimi-code';
   constructor(credential: ApiKeyCredential | OAuthCredential, options: KimiCodeProviderOptions = {}) {
-    if (credential.provider !== 'kimi-code') throw new ForgeError('AuthenticationError', 'A Kimi Code credential is required.');
+    if (credential.provider !== 'kimi-code') throw new MarsError('AuthenticationError', 'A Kimi Code credential is required.');
     super({ ...credential, provider: 'anthropic' }, { ...options, baseUrl: options.baseUrl ?? 'https://api.kimi.com/coding/v1' });
   }
 }
@@ -272,7 +272,7 @@ export class OpenAICodexProvider implements ModelProvider {
   readonly id = 'openai-codex';
   readonly #codex: CodexLike;
   constructor(credential: Credential, options: CodexProviderOptions = {}) {
-    if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new ForgeError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
+    if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new MarsError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
     this.#codex = options.codex ?? new Codex();
   }
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
@@ -292,19 +292,19 @@ export class OpenAICodexProvider implements ModelProvider {
     } catch (error) {
       checkAbort(signal);
       const message = diagnostic(error instanceof Error ? error.message : String(error));
-      if (/login|auth|credential|401|unauthorized/i.test(message ?? '')) throw new ForgeError('AuthenticationError', 'Codex requires a ChatGPT login. Run `mars login openai-codex`.');
-      throw new ForgeError('ProviderUnavailableError', `Codex runtime failed${message ? `: ${message}` : '.'}`);
+      if (/login|auth|credential|401|unauthorized/i.test(message ?? '')) throw new MarsError('AuthenticationError', 'Codex requires a ChatGPT login. Run `mars login openai-codex`.');
+      throw new MarsError('ProviderUnavailableError', `Codex runtime failed${message ? `: ${message}` : '.'}`);
     }
     let parsed: unknown;
     try { parsed = JSON.parse(result.finalResponse); }
-    catch { throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.'); }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.');
+    catch { throw new MarsError('ProviderUnavailableError', 'Codex returned invalid structured output.'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new MarsError('ProviderUnavailableError', 'Codex returned invalid structured output.');
     const value = parsed as { content?: unknown; toolCalls?: unknown };
-    if (typeof value.content !== 'string' || !Array.isArray(value.toolCalls)) throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.');
+    if (typeof value.content !== 'string' || !Array.isArray(value.toolCalls)) throw new MarsError('ProviderUnavailableError', 'Codex returned invalid structured output.');
     const toolCalls: ToolCall[] = value.toolCalls.map(call => {
-      if (!call || typeof call !== 'object' || Array.isArray(call)) throw new ForgeError('InvalidToolCallError', 'Codex returned an invalid tool call.');
+      if (!call || typeof call !== 'object' || Array.isArray(call)) throw new MarsError('InvalidToolCallError', 'Codex returned an invalid tool call.');
       const item = call as { id?: unknown; name?: unknown; arguments?: unknown };
-      if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name) throw new ForgeError('InvalidToolCallError', 'Codex returned an invalid tool call.');
+      if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name) throw new MarsError('InvalidToolCallError', 'Codex returned an invalid tool call.');
       return { id: item.id, name: item.name, arguments: item.arguments };
     });
     if (value.content) yield { type: 'text', text: value.content };

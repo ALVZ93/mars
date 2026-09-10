@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { AgentMessage } from '../../core/src/index.js';
 
 export interface Session {
@@ -65,20 +65,20 @@ export class FileSessionStore implements SessionStore {
   #queue: Promise<void> = Promise.resolve();
   constructor(directory = defaultSessionDirectory()) { this.directory = directory; }
   async get(id: string): Promise<Session | undefined> {
-    if (!validId(id)) throw new ForgeError('ConfigurationError', 'Invalid session ID.');
+    if (!validId(id)) throw new MarsError('ConfigurationError', 'Invalid session ID.');
     return this.#serial(async () => {
       let raw: string;
       try { raw = await readFile(join(this.directory, `${id}.json`), 'utf8'); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw new ForgeError('ConfigurationError', 'Could not read MARS session.'); }
-      try { return parseSession(JSON.parse(raw)); } catch { throw new ForgeError('ConfigurationError', 'MARS session is invalid or corrupted.'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw new MarsError('ConfigurationError', 'Could not read MARS session.'); }
+      try { return parseSession(JSON.parse(raw)); } catch { throw new MarsError('ConfigurationError', 'MARS session is invalid or corrupted.'); }
     });
   }
   async save(session: Session): Promise<void> {
-    if (!validId(session.id)) throw new ForgeError('ConfigurationError', 'Invalid session ID.');
+    if (!validId(session.id)) throw new MarsError('ConfigurationError', 'Invalid session ID.');
     const snapshot = parseSession(session);
     await this.#serial(async () => {
       try { await mkdir(this.directory, { recursive: true }); }
-      catch { throw new ForgeError('ConfigurationError', 'Could not create the MARS session directory.'); }
+      catch { throw new MarsError('ConfigurationError', 'Could not create the MARS session directory.'); }
       const file = join(this.directory, `${snapshot.id}.json`);
       const temporary = `${file}.${randomUUID()}.tmp`;
       try {
@@ -86,7 +86,7 @@ export class FileSessionStore implements SessionStore {
         await rename(temporary, file);
       } catch {
         await unlink(temporary).catch(() => {});
-        throw new ForgeError('ConfigurationError', 'Could not write MARS session.');
+        throw new MarsError('ConfigurationError', 'Could not write MARS session.');
       }
     });
   }
@@ -100,7 +100,7 @@ export class FileSessionStore implements SessionStore {
         : requestedWorkspace;
       let names: string[];
       try { names = await readdir(this.directory); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw new ForgeError('ConfigurationError', 'Could not list MARS sessions.'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw new MarsError('ConfigurationError', 'Could not list MARS sessions.'); }
       const results: SessionSummary[] = [];
       for (const name of names.filter(item => item.endsWith('.json'))) {
         const id = name.slice(0, -5);
@@ -118,8 +118,8 @@ export class FileSessionStore implements SessionStore {
     });
   }
   async delete(id: string): Promise<void> {
-    if (!validId(id)) throw new ForgeError('ConfigurationError', 'Invalid session ID.');
-    await this.#serial(async () => { await unlink(join(this.directory, `${id}.json`)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ForgeError('ConfigurationError', 'Could not delete MARS session.'); }); });
+    if (!validId(id)) throw new MarsError('ConfigurationError', 'Invalid session ID.');
+    await this.#serial(async () => { await unlink(join(this.directory, `${id}.json`)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new MarsError('ConfigurationError', 'Could not delete MARS session.'); }); });
   }
   async #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);

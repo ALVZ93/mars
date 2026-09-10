@@ -1,6 +1,6 @@
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 
 const MAX_FILE_CHARS = 16_000;
 const MAX_CONTEXT_CHARS = 48_000;
@@ -56,8 +56,8 @@ export async function discoverProjectFiles(workspace: string, home = process.env
   }
   for (const file of [
     path.join(workspace, '.mars', 'instructions.md'),
-    path.join(workspace, '.forge', 'instructions.md'),
-    ...(home ? [path.join(home, '.mars', 'instructions.md'), path.join(home, '.forge', 'instructions.md')] : []),
+    path.join(workspace, '.mars', 'instructions.md'),
+    ...(home ? [path.join(home, '.mars', 'instructions.md'), path.join(home, '.mars', 'instructions.md')] : []),
   ]) {
     const content = await readContextFile(file);
     if (content !== undefined) {
@@ -84,8 +84,8 @@ export class SkillRegistry {
   async list(): Promise<Skill[]> {
     const roots: Array<{ root: string; scope: Skill['scope'] }> = [
       { root: path.join(this.workspace, '.mars', 'skills'), scope: 'project' },
-      { root: path.join(this.workspace, '.forge', 'skills'), scope: 'project' },
-      ...(this.home ? [{ root: path.join(this.home, '.mars', 'skills'), scope: 'user' as const }, { root: path.join(this.home, '.forge', 'skills'), scope: 'user' as const }] : []),
+      { root: path.join(this.workspace, '.mars', 'skills'), scope: 'project' },
+      ...(this.home ? [{ root: path.join(this.home, '.mars', 'skills'), scope: 'user' as const }, { root: path.join(this.home, '.mars', 'skills'), scope: 'user' as const }] : []),
     ];
     const result: Skill[] = [];
     const seen = new Set<string>();
@@ -131,5 +131,5 @@ export async function buildProjectContext(options: ContextOptions): Promise<Proj
 }
 
 export function assertContextSize(value: string, maxChars = MAX_CONTEXT_CHARS): void {
-  if (value.length > maxChars) throw new ForgeError('ContextLimitError', 'Project context exceeds the configured limit.');
+  if (value.length > maxChars) throw new MarsError('ContextLimitError', 'Project context exceeds the configured limit.');
 }

@@ -13,9 +13,9 @@ import {
   readEventLog, readEventLogEntries,
   loadConfig, saveConfig, routeTask, classifyTask, SkillRegistry, selectWorkflow, ModelRegistry,
   OpenRouterProvider, OllamaProvider,
-} from '../dist/packages/sdk/src/index.js';
+} from '../dist/packages/sdk/src/internal.js';
 import { FakeProvider } from '../dist/packages/providers/src/fake.js';
-import { createForge } from '../dist/packages/sdk/src/index.js';
+import { createMars } from '../dist/packages/sdk/src/internal.js';
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
@@ -46,13 +46,13 @@ test('sessions survive process boundaries and resume from tool observations', as
   const root = await tempRoot(t);
   await writeFile(path.join(root, 'package.json'), '{"name":"session-fixture"}');
   const sessions = new FileSessionStore(path.join(root, '.mars', 'sessions'));
-  const first = await createForge({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'first', toolCalls: [] }]), model: 'scripted', sessionStore: sessions });
+  const first = await createMars({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'first', toolCalls: [] }]), model: 'scripted', sessionStore: sessions });
   await first.run('first task');
   const listed = await sessions.list(root);
   assert.equal(listed.length, 1);
   const saved = await sessions.get(first.id);
   assert.equal(saved?.messages.filter(message => message.role === 'user').length, 1);
-  const resumed = await createForge({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'second', toolCalls: [] }]), model: 'scripted', sessionStore: sessions, sessionId: first.id });
+  const resumed = await createMars({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'second', toolCalls: [] }]), model: 'scripted', sessionStore: sessions, sessionId: first.id });
   await resumed.run('second task');
   assert.equal(resumed.session.messages.filter(message => message.role === 'user').length, 2);
   assert.equal((await sessions.list(root))[0].messageCount, resumed.session.messages.length);
@@ -102,12 +102,12 @@ test('SDK exposes lifecycle hooks and opt-in workflows with real verification', 
     { role: 'assistant', content: 'implemented', toolCalls: [] },
     { role: 'assistant', content: 'verified', toolCalls: [] },
   ]);
-  const forge = await createForge({ workspace: root, provider, model: 'scripted', includeProjectContext: false, shellPolicy: 'allow' });
+  const mars = await createMars({ workspace: root, provider, model: 'scripted', includeProjectContext: false, shellPolicy: 'allow' });
   const events = [];
-  forge.on('model:request', event => events.push(event));
-  await forge.runWorkflow(undefined, 'fix this bug');
+  mars.on('model:request', event => events.push(event));
+  await mars.runWorkflow(undefined, 'fix this bug');
   assert.equal(events.length, 3);
-  assert.equal(forge.session.messages.filter(message => message.role === 'user').length, 3);
+  assert.equal(mars.session.messages.filter(message => message.role === 'user').length, 3);
 });
 
 test('workflow failures persist a failed session and roles can use separate providers', async t => {
@@ -122,7 +122,7 @@ test('workflow failures persist a failed session and roles can use separate prov
   const implementer = makeProvider('implementer-fake', 'implemented');
   const verifier = makeProvider('verifier-fake', 'verified');
   const sessions = new FileSessionStore(path.join(root, '.mars', 'sessions'));
-  const forge = await createForge({
+  const mars = await createMars({
     workspace: root,
     provider: planner,
     model: 'default',
@@ -134,12 +134,12 @@ test('workflow failures persist a failed session and roles can use separate prov
       verifier: { provider: verifier, model: 'verify' },
     },
   });
-  await assert.rejects(forge.runWorkflow('feature', 'add a feature'), { code: 'ToolExecutionError' });
+  await assert.rejects(mars.runWorkflow('feature', 'add a feature'), { code: 'ToolExecutionError' });
   assert.equal(planner.requests[0]?.model, 'plan');
   assert.equal(implementer.requests[0]?.model, 'implement');
   assert.equal(verifier.requests[0]?.model, 'verify');
-  assert.equal(forge.providers.length, 3);
-  assert.equal((await sessions.get(forge.id))?.status, 'failed');
+  assert.equal(mars.providers.length, 3);
+  assert.equal((await sessions.get(mars.id))?.status, 'failed');
 });
 
 test('evidence records outcomes without storing task or model content', async t => {
@@ -151,9 +151,9 @@ test('evidence records outcomes without storing task or model content', async t 
     { role: 'assistant', content: 'done', toolCalls: [] },
     { role: 'assistant', content: 'done again', toolCalls: [] },
   ]);
-  const forge = await createForge({ workspace: root, provider, model: 'scripted', evidenceStore: evidence });
-  await forge.run('run testing checks with a sensitive-token-placeholder');
-  await forge.run('run testing checks again');
+  const mars = await createMars({ workspace: root, provider, model: 'scripted', evidenceStore: evidence });
+  await mars.run('run testing checks with a sensitive-token-placeholder');
+  await mars.run('run testing checks again');
   const snapshot = await evidence.load();
   const skill = Object.values(snapshot.skills)[0];
   assert.equal(skill?.executions, 2);
@@ -237,22 +237,22 @@ function respond(id, result) { process.stdout.write(JSON.stringify({ jsonrpc: '2
     { role: 'assistant', content: '', toolCalls: [{ id: 'mcp-call', name: 'mcp_fixture_echo', arguments: { value: 'from-cli' } }] },
     { role: 'assistant', content: 'MCP done', toolCalls: [] },
   ]));
-  const result = spawnSync(process.execPath, [cli, 'run', 'use the MCP fixture', '--model', 'fake:scripted', '--workspace', root, '--script', script, '--no-animation'], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '' } });
+  const result = spawnSync(process.execPath, [cli, 'run', 'use the MCP fixture', '--model', 'fake:scripted', '--workspace', root, '--script', script, '--no-animation'], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, MARS_MODEL: '', OPENAI_API_KEY: '' } });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(await readFile(marker, 'utf8'), 'from-cli');
 });
 
 test('SDK extension points register tools, providers and workflows without changing the loop', async t => {
   const root = await tempRoot(t, 'mars-extensions-');
-  const forge = await createForge({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'done', toolCalls: [] }]), model: 'scripted', includeProjectContext: false });
-  forge.registerTool({ name: 'noop', description: 'No-op test tool', parameters: { type: 'object', properties: {}, additionalProperties: false }, validate: input => input, execute: async () => 'ok' });
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([{ role: 'assistant', content: 'done', toolCalls: [] }]), model: 'scripted', includeProjectContext: false });
+  mars.registerTool({ name: 'noop', description: 'No-op test tool', parameters: { type: 'object', properties: {}, additionalProperties: false }, validate: input => input, execute: async () => 'ok' });
   const customProvider = new FakeProvider();
   Object.defineProperty(customProvider, 'id', { value: 'custom-fake' });
-  forge.registerProvider(customProvider);
-  forge.registerWorkflow({ id: 'custom', description: 'custom', phases: [], matches: () => false });
-  assert.ok(forge.tools.schemas().some(tool => tool.name === 'noop'));
-  assert.equal(forge.providers.length, 2);
-  assert.ok(forge.workflows.some(workflow => workflow.id === 'custom'));
+  mars.registerProvider(customProvider);
+  mars.registerWorkflow({ id: 'custom', description: 'custom', phases: [], matches: () => false });
+  assert.ok(mars.tools.schemas().some(tool => tool.name === 'noop'));
+  assert.equal(mars.providers.length, 2);
+  assert.ok(mars.workflows.some(workflow => workflow.id === 'custom'));
 });
 
 test('project skills are selected by task and verification runs real package scripts', async t => {
@@ -287,9 +287,9 @@ test('project skills override same-named user skills and selection refreshes for
     request => { requests.push(request); return { role: 'assistant', content: 'tested', toolCalls: [] }; },
     request => { requests.push(request); return { role: 'assistant', content: 'documented', toolCalls: [] }; },
   ]);
-  const forge = await createForge({ workspace: root, provider, model: 'scripted' });
-  await forge.run('run testing checks');
-  await forge.run('write documentation task');
+  const mars = await createMars({ workspace: root, provider, model: 'scripted' });
+  await mars.run('run testing checks');
+  await mars.run('write documentation task');
   const firstSkills = requests[0].messages.filter(message => message.role === 'system').map(message => message.content).join('\n');
   const secondSkills = requests[1].messages.filter(message => message.role === 'system').map(message => message.content).join('\n');
   assert.match(firstSkills, /PROJECT TESTING/);
@@ -341,12 +341,12 @@ test('AGENTS.md is included as bounded project context before the first model re
   const root = await tempRoot(t, 'mars-context-');
   await writeFile(path.join(root, 'AGENTS.md'), 'Use the project test command after edits.');
   let request;
-  const forge = await createForge({
+  const mars = await createMars({
     workspace: root,
     provider: new FakeProvider([requestValue => { request = requestValue; return { role: 'assistant', content: 'ok', toolCalls: [] }; }]),
     model: 'scripted',
   });
-  await forge.run('inspect');
+  await mars.run('inspect');
   assert.match(request.messages[0].content, /Use the project test command/);
 });
 
@@ -365,7 +365,7 @@ test('OpenRouter and Ollama adapters are available without sharing provider inte
 test('compiled CLI completes an offline daily-driver flow with config, verification and sessions', async t => {
   const root = await tempRoot(t, 'mars-cli-v02-');
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'cli-fixture', scripts: { test: 'node -e "process.exit(0)"' } }));
-  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, MARS_MODEL: '', FORGE_MODEL: '', OPENAI_API_KEY: '', MARS_CREDENTIAL_STORE: 'file', APPDATA: root, XDG_CONFIG_HOME: root, USERPROFILE: root, HOME: root } });
+  const runCli = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, MARS_MODEL: '', OPENAI_API_KEY: '', MARS_CREDENTIAL_STORE: 'file', APPDATA: root, XDG_CONFIG_HOME: root, USERPROFILE: root, HOME: root } });
   assert.equal(runCli(['init', '--workspace', root]).status, 0);
   assert.equal(runCli(['config', 'set', 'model.default', 'fake:scripted', '--workspace', root]).status, 0);
   const result = runCli(['run', 'inspect this fixture', '--workspace', root, '--verify', '--allow-shell', '--no-animation']);

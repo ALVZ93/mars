@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
-function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', FORGE_MODEL: '', MARS_CREDENTIAL_STORE: 'file', ...env } }); }
+function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', MARS_CREDENTIAL_STORE: 'file', ...env } }); }
 test('CLI help, version and configuration failures', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'mars-cli-config-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -26,20 +26,20 @@ test('CLI help, version and configuration failures', async t => {
   assert.equal(run(['run', 'task', '--model', 'fake:scripted', '--timeout', '-1', '--workspace', root], isolatedEnv).status, 1);
 });
 test('CLI offline fixture executes read → write → shell → final', async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'forge-cli-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'mars-cli-'));
   assert.equal(path.dirname(root), tmpdir());
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, 'package.json'), '{"name":"fixture"}');
   const script = fileURLToPath(new URL('../examples/fake-script.json', import.meta.url));
   const result = run(['run', 'offline fixture', '--model', 'fake:scripted', '--workspace', root, '--script', script, '--allow-shell']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(await readFile(path.join(root, 'hello.txt'), 'utf8'), 'hello forge');
+  assert.equal(await readFile(path.join(root, 'hello.txt'), 'utf8'), 'hello mars');
   assert.match(result.stderr, /\[tool\] read_file[\s\S]*\[tool\] write_file[\s\S]*\[tool\] shell/);
   assert.ok(!result.stderr.includes('Error'), result.stderr);
   assert.match(result.stdout, /Fake script complete/);
 });
 test('CLI blocks shell in non-interactive mode unless explicitly enabled', async t => {
-  const root = await mkdtemp(path.join(tmpdir(), 'forge-cli-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'mars-cli-'));
   assert.equal(path.dirname(root), tmpdir());
   t.after(() => rm(root, { recursive: true, force: true }));
   const script = path.join(root, 'script.json');

@@ -1,38 +1,38 @@
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { AgentMessage, ModelDescriptor } from '../../core/src/index.js';
 
 export class Workspace {
   private constructor(readonly root: string) {}
   static async open(root: string): Promise<Workspace> {
     const canonical = await realpath(root);
-    if (!(await lstat(canonical)).isDirectory()) throw new ForgeError('ConfigurationError', 'Workspace must be a directory.');
+    if (!(await lstat(canonical)).isDirectory()) throw new MarsError('ConfigurationError', 'Workspace must be a directory.');
     return new Workspace(canonical);
   }
   async resolve(input: string): Promise<string> {
     if (!input || input.includes('\0') || (process.platform !== 'win32' && /[\\:]|^[A-Za-z]:/.test(input))) {
-      throw new ForgeError('WorkspaceViolationError', 'Invalid workspace path.');
+      throw new MarsError('WorkspaceViolationError', 'Invalid workspace path.');
     }
     const target = path.resolve(this.root, input);
     const relative = path.relative(this.root, target);
     if (path.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.sep}`)) {
-      throw new ForgeError('WorkspaceViolationError', 'Path is outside the workspace.');
+      throw new MarsError('WorkspaceViolationError', 'Path is outside the workspace.');
     }
     const parts = relative.split(path.sep).filter(Boolean);
     let current = this.root;
     for (const part of parts) {
       if (part.includes(':') || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part)) {
-        throw new ForgeError('WorkspaceViolationError', 'Ambiguous or reserved path.');
+        throw new MarsError('WorkspaceViolationError', 'Ambiguous or reserved path.');
       }
-      if (/^(\.env(?:\..*)?|\.ssh|\.aws|\.azure|\.config|\.git|\.forge|\.mars|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(pem|key|p12|pfx))$/i.test(part)) {
-        throw new ForgeError('PermissionDeniedError', 'Sensitive path is blocked.');
+      if (/^(\.env(?:\..*)?|\.ssh|\.aws|\.azure|\.config|\.git|\.mars|\.mars|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(pem|key|p12|pfx))$/i.test(part)) {
+        throw new MarsError('PermissionDeniedError', 'Sensitive path is blocked.');
       }
       current = path.join(current, part);
       try {
         const stat = await lstat(current);
         // ponytail: reject all links; allow internal links only with an OS sandbox later.
-        if (stat.isSymbolicLink() || (stat.isFile() && stat.nlink > 1)) throw new ForgeError('WorkspaceViolationError', 'Linked paths are blocked.');
+        if (stat.isSymbolicLink() || (stat.isFile() && stat.nlink > 1)) throw new MarsError('WorkspaceViolationError', 'Linked paths are blocked.');
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
@@ -120,7 +120,7 @@ export class Permissions {
       return;
     }
     this.emit?.({ type: 'permission:denied', permission: kind, target });
-    throw new ForgeError('PermissionDeniedError', `${kind} was not approved.`);
+    throw new MarsError('PermissionDeniedError', `${kind} was not approved.`);
   }
   async checkGit(operation: 'commit' | 'push', target: string, cwd: string, signal: AbortSignal): Promise<void> {
     const kind: PermissionKind = operation === 'push' ? 'git.push' : 'git.commit';
@@ -129,31 +129,31 @@ export class Permissions {
     this.emit?.({ type: 'permission:requested', permission: kind, target });
     if (policy === 'ask' && this.approve && await this.approve(target, cwd, signal)) { this.emit?.({ type: 'permission:granted', permission: kind, target }); return; }
     this.emit?.({ type: 'permission:denied', permission: kind, target });
-    throw new ForgeError('PermissionDeniedError', `${kind} was not approved.`);
+    throw new MarsError('PermissionDeniedError', `${kind} was not approved.`);
   }
   async checkShell(command: string, cwd: string, signal: AbortSignal): Promise<void> {
     let approved = false;
     if (isDestructiveShell(command)) {
       if (this.destructiveShell === 'deny') {
         this.emit?.({ type: 'permission:denied', permission: 'shell.destructive', target: command });
-        throw new ForgeError('PermissionDeniedError', 'Destructive shell commands are denied by policy.');
+        throw new MarsError('PermissionDeniedError', 'Destructive shell commands are denied by policy.');
       }
       this.emit?.({ type: 'permission:requested', permission: 'shell.destructive', target: command });
       if (this.destructiveShell === 'ask' && (!this.approve || !(approved = await this.approve(command, cwd, signal)))) {
         this.emit?.({ type: 'permission:denied', permission: 'shell.destructive', target: command });
-        throw new ForgeError('PermissionDeniedError', 'Destructive shell commands were not approved.');
+        throw new MarsError('PermissionDeniedError', 'Destructive shell commands were not approved.');
       }
       this.emit?.({ type: 'permission:granted', permission: 'shell.destructive', target: command });
     }
     if (isNetworkShell(command)) {
       if (this.network === 'deny') {
         this.emit?.({ type: 'permission:denied', permission: 'network.access', target: command });
-        throw new ForgeError('PermissionDeniedError', 'Network access is denied by policy.');
+        throw new MarsError('PermissionDeniedError', 'Network access is denied by policy.');
       }
       this.emit?.({ type: 'permission:requested', permission: 'network.access', target: command });
       if (this.network === 'ask' && !approved && (!this.approve || !(approved = await this.approve(command, cwd, signal)))) {
         this.emit?.({ type: 'permission:denied', permission: 'network.access', target: command });
-        throw new ForgeError('PermissionDeniedError', 'Network access was not approved.');
+        throw new MarsError('PermissionDeniedError', 'Network access was not approved.');
       }
       this.emit?.({ type: 'permission:granted', permission: 'network.access', target: command });
     }
@@ -164,7 +164,7 @@ export class Permissions {
       return;
     }
     this.emit?.({ type: 'permission:denied', permission: 'shell.execute', target: command });
-    throw new ForgeError('PermissionDeniedError', 'Shell execution was not approved.');
+    throw new MarsError('PermissionDeniedError', 'Shell execution was not approved.');
   }
 }
 

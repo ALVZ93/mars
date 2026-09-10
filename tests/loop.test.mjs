@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runAgent, ForgeError } from '../dist/packages/core/src/index.js';
+import { runAgent, MarsError } from '../dist/packages/core/src/index.js';
 import { FakeProvider } from '../dist/packages/providers/src/fake.js';
 
 const final = { role: 'assistant', content: 'Done', toolCalls: [] };
@@ -49,7 +49,7 @@ test('cancellation, timeout and interrupted streams never report success', async
 });
 test('provider error propagates and input history is not mutated', async () => {
   const messages = [{ role: 'user', content: 'Task' }];
-  await assert.rejects(run([], { messages, provider: { id: 'broken', async *stream() { throw new ForgeError('AuthenticationError', 'Missing credential'); } } }), { code: 'AuthenticationError' });
+  await assert.rejects(run([], { messages, provider: { id: 'broken', async *stream() { throw new MarsError('AuthenticationError', 'Missing credential'); } } }), { code: 'AuthenticationError' });
   assert.equal(messages.length, 1);
 });
 test('transient provider retries are opt-in and bounded before any tool executes', async () => {
@@ -59,7 +59,7 @@ test('transient provider retries are opt-in and bounded before any tool executes
     id: 'flaky',
     async *stream() {
       attempts++;
-      if (attempts === 1) throw new ForgeError('ProviderUnavailableError', 'temporary outage');
+      if (attempts === 1) throw new MarsError('ProviderUnavailableError', 'temporary outage');
       yield { type: 'done', message: final };
     },
   };
@@ -71,7 +71,7 @@ test('transient provider retries are opt-in and bounded before any tool executes
   assert.equal(attempts, 2);
   assert.deepEqual(events.filter(event => event.type === 'model:retry').map(event => event.attempt), [1]);
   attempts = 0;
-  const invalidRequest = { id: 'invalid', async *stream() { attempts++; throw new ForgeError('ProviderUnavailableError', 'HTTP 400: model not found'); } };
+  const invalidRequest = { id: 'invalid', async *stream() { attempts++; throw new MarsError('ProviderUnavailableError', 'HTTP 400: model not found'); } };
   await assert.rejects(run([], { provider: invalidRequest, maxRetries: 3, retryDelayMs: 1 }), { code: 'ProviderUnavailableError' });
   assert.equal(attempts, 1);
 });

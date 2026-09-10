@@ -4,7 +4,7 @@ Estado: sustituido parcialmente por la auditoría de 2026-09-09 en `docs/auth/pr
 
 ## Decisión
 
-El producto pasa a llamarse MARS. `mars` es el binario principal y `forge` queda como alias de compatibilidad. La CLI muestra una animación breve únicamente en terminales interactivas; no se emite ANSI en pipes, CI o sesiones con `NO_COLOR`.
+El producto se llama MARS y publica únicamente el binario `mars`. La CLI muestra una animación breve únicamente en terminales interactivas; no se emite ANSI en pipes, CI o sesiones con `NO_COLOR`.
 
 La decisión original sobre login directo de suscripción no se considera apta para release: Anthropic lo prohíbe para terceros no aprobados y OpenAI documenta un flujo gestionado por Codex. OpenAI Codex se integra mediante su SDK/runtime oficial; Kimi queda experimental y desactivado por defecto; Anthropic estable usa API key.
 

@@ -1,5 +1,5 @@
 import { BrowserOAuthProvider } from './oauth.js';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { AuthContext, AuthMethod, AuthProvider, AuthStatus, Credential, OAuthCredential } from './index.js';
 
 /** Google Cloud OAuth for a user's own Gemini API project (not the consumer Gemini subscription). */
@@ -10,7 +10,7 @@ export class GoogleGeminiAuthProvider implements AuthProvider {
   #getProvider(): BrowserOAuthProvider {
     if (this.#provider) return this.#provider;
     const clientId = process.env.MARS_GEMINI_CLIENT_ID;
-    if (!clientId) throw new ForgeError('ConfigurationError', 'Set MARS_GEMINI_CLIENT_ID to use Google Cloud browser login.');
+    if (!clientId) throw new MarsError('ConfigurationError', 'Set MARS_GEMINI_CLIENT_ID to use Google Cloud browser login.');
     this.#provider = new BrowserOAuthProvider({
       provider: this.id,
       displayName: this.displayName,
@@ -25,7 +25,7 @@ export class GoogleGeminiAuthProvider implements AuthProvider {
   }
   methods(): readonly AuthMethod[] { return ['oauth-pkce']; }
   async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method !== 'oauth-pkce') throw new ForgeError('ConfigurationError', `${this.displayName} does not support ${method}.`);
+    if (method !== 'oauth-pkce') throw new MarsError('ConfigurationError', `${this.displayName} does not support ${method}.`);
     const credential = await this.#getProvider().login(method, context) as OAuthCredential;
     const projectId = process.env.GOOGLE_CLOUD_PROJECT;
     return projectId ? { ...credential, metadata: { projectId } } : credential;

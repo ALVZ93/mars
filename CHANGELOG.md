@@ -8,10 +8,13 @@ Todos los cambios relevantes se documentarán aquí. El proyecto sigue [Semantic
 
 - Agent runtime multi-provider, CLI interactiva, tools de workspace, sesiones y SDK.
 - Routing determinista, workflows, skills, evidencia local, MCP stdio y sandbox Docker opt-in.
-- Empaquetado npm con CLI `mars` y alias `forge`.
+- Empaquetado npm con la CLI `mars`.
 
 ### Changed
 
+- La API pública adopta `createMars`, `MarsError`, `MarsOptions` y `MarsHook`; se elimina la nomenclatura provisional anterior.
+- Core, SDK y CLI se dividen en módulos con dependencias explícitas; el SDK expone únicamente su superficie pública deliberada.
+- El paquete publica exclusivamente el binario `mars`.
 - Los checks de proyecto usan el mismo executor, permisos y sandbox que el shell del agente.
 - Las sesiones compactan turnos antiguos completos al alcanzar el límite local de contexto.
 - OpenAI Codex usa el SDK/runtime oficial para acceder mediante suscripción de ChatGPT; Kimi subscription auth queda experimental y desactivado por defecto.

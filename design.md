@@ -802,7 +802,7 @@ discipline
 reasoning
 ```
 
-Avoid explicit marketing claims around "never forgets" unless technically accurate.
+Avoid explicit marketing claims around "never marsts" unless technically accurate.
 
 ---
 

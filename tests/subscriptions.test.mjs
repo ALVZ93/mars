@@ -14,7 +14,7 @@ import {
   OpenAICodexAuthProvider,
   OpenAICodexProvider,
   QwenProvider,
-} from '../dist/packages/sdk/src/index.js';
+} from '../dist/packages/sdk/src/internal.js';
 
 const signal = () => new AbortController().signal;
 const sse = events => {

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { ForgeError, checkAbort } from '../../core/src/index.js';
+import { MarsError, checkAbort } from '../../core/src/index.js';
 import type { Tool, ToolContext } from '../../core/src/index.js';
 
 type Json = Record<string, unknown>;
@@ -29,34 +29,34 @@ function textContent(value: unknown): string {
     if (entry?.type === 'text' && typeof entry.text === 'string') return entry.text;
     return entry ? JSON.stringify(entry) : '';
   }).filter(Boolean);
-  if (record.isError === true) throw new ForgeError('ToolExecutionError', parts.join('\n') || 'MCP tool reported an error.');
+  if (record.isError === true) throw new MarsError('ToolExecutionError', parts.join('\n') || 'MCP tool reported an error.');
   return parts.join('\n') || (record.structuredContent ? JSON.stringify(record.structuredContent) : JSON.stringify(value));
 }
 function validateSchema(input: unknown, schema: Record<string, unknown>, label = 'input'): unknown {
   const type = schema.type;
   if (type === 'object') {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ForgeError('InvalidToolCallError', `${label} must be an object.`);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new MarsError('InvalidToolCallError', `${label} must be an object.`);
     const source = input as Record<string, unknown>;
     const properties = object(schema.properties) ?? {};
     const required = Array.isArray(schema.required) ? schema.required.filter((value): value is string => typeof value === 'string') : [];
-    for (const key of required) if (!(key in source)) throw new ForgeError('InvalidToolCallError', `${label}.${key} is required.`);
-    if (schema.additionalProperties === false) for (const key of Object.keys(source)) if (!(key in properties)) throw new ForgeError('InvalidToolCallError', `${label}.${key} is not allowed.`);
+    for (const key of required) if (!(key in source)) throw new MarsError('InvalidToolCallError', `${label}.${key} is required.`);
+    if (schema.additionalProperties === false) for (const key of Object.keys(source)) if (!(key in properties)) throw new MarsError('InvalidToolCallError', `${label}.${key} is not allowed.`);
     for (const [key, value] of Object.entries(source)) {
       const property = object(properties[key]);
       if (property) validateSchema(value, property, `${label}.${key}`);
     }
     return input;
   }
-  if (type === 'string' && typeof input !== 'string') throw new ForgeError('InvalidToolCallError', `${label} must be a string.`);
-  if (type === 'number' && (typeof input !== 'number' || !Number.isFinite(input))) throw new ForgeError('InvalidToolCallError', `${label} must be a number.`);
-  if (type === 'integer' && (!Number.isSafeInteger(input))) throw new ForgeError('InvalidToolCallError', `${label} must be an integer.`);
-  if (type === 'boolean' && typeof input !== 'boolean') throw new ForgeError('InvalidToolCallError', `${label} must be a boolean.`);
+  if (type === 'string' && typeof input !== 'string') throw new MarsError('InvalidToolCallError', `${label} must be a string.`);
+  if (type === 'number' && (typeof input !== 'number' || !Number.isFinite(input))) throw new MarsError('InvalidToolCallError', `${label} must be a number.`);
+  if (type === 'integer' && (!Number.isSafeInteger(input))) throw new MarsError('InvalidToolCallError', `${label} must be an integer.`);
+  if (type === 'boolean' && typeof input !== 'boolean') throw new MarsError('InvalidToolCallError', `${label} must be a boolean.`);
   if (type === 'array') {
-    if (!Array.isArray(input)) throw new ForgeError('InvalidToolCallError', `${label} must be an array.`);
+    if (!Array.isArray(input)) throw new MarsError('InvalidToolCallError', `${label} must be an array.`);
     const items = object(schema.items);
     if (items) input.forEach((value, index) => validateSchema(value, items, `${label}[${index}]`));
   }
-  if (Array.isArray(schema.enum) && !schema.enum.some(value => Object.is(value, input))) throw new ForgeError('InvalidToolCallError', `${label} has an invalid value.`);
+  if (Array.isArray(schema.enum) && !schema.enum.some(value => Object.is(value, input))) throw new MarsError('InvalidToolCallError', `${label} has an invalid value.`);
   return input;
 }
 function toolName(server: string, name: string): string { return `mcp_${server}_${name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120); }
@@ -74,7 +74,7 @@ export class McpStdioClient {
   #closed = false;
   #tools: McpToolDefinition[] = [];
   constructor(options: McpStdioServerOptions) {
-    if (!options.name.trim() || !options.command.trim()) throw new ForgeError('ConfigurationError', 'MCP server name and command are required.');
+    if (!options.name.trim() || !options.command.trim()) throw new MarsError('ConfigurationError', 'MCP server name and command are required.');
     this.options = { ...options, name: options.name.trim(), command: options.command.trim(), args: [...(options.args ?? [])], timeoutMs: options.timeoutMs ?? 30_000 };
   }
   async start(signal?: AbortSignal): Promise<McpToolDefinition[]> {
@@ -89,8 +89,8 @@ export class McpStdioClient {
     this.#child = child;
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => this.#onData(String(chunk)));
-    child.on('error', error => this.#failPending(new ForgeError('ToolExecutionError', `MCP server could not start: ${error.message}`)));
-    child.on('close', code => this.#failPending(new ForgeError('ToolExecutionError', `MCP server exited with code ${code ?? 'unknown'}.`)));
+    child.on('error', error => this.#failPending(new MarsError('ToolExecutionError', `MCP server could not start: ${error.message}`)));
+    child.on('close', code => this.#failPending(new MarsError('ToolExecutionError', `MCP server exited with code ${code ?? 'unknown'}.`)));
     try {
       await this.#request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'mars', version: '0.1.0' } }, signal);
       this.#notify('notifications/initialized', {});
@@ -107,8 +107,8 @@ export class McpStdioClient {
       return [...this.#tools];
     } catch (error) {
       await this.close();
-      if (error instanceof ForgeError) throw error;
-      throw new ForgeError('ToolExecutionError', 'MCP initialization failed.');
+      if (error instanceof MarsError) throw error;
+      throw new MarsError('ToolExecutionError', 'MCP initialization failed.');
     }
   }
   asTools(definitions = this.#tools): Tool[] {
@@ -121,12 +121,12 @@ export class McpStdioClient {
     }));
   }
   async callTool(name: string, argumentsValue: unknown, signal?: AbortSignal): Promise<unknown> {
-    if (!this.#child || this.#closed) throw new ForgeError('ToolExecutionError', `MCP server ${this.options.name} is not connected.`);
+    if (!this.#child || this.#closed) throw new MarsError('ToolExecutionError', `MCP server ${this.options.name} is not connected.`);
     return this.#request('tools/call', { name, arguments: argumentsValue ?? {} }, signal);
   }
   async close(): Promise<void> {
     this.#closed = true;
-    this.#failPending(new ForgeError('CancelledError', 'MCP server closed.'));
+    this.#failPending(new MarsError('CancelledError', 'MCP server closed.'));
     const child = this.#child;
     this.#child = undefined;
     if (!child || child.exitCode !== null) return;
@@ -141,7 +141,7 @@ export class McpStdioClient {
   }
   #request(method: string, params: Json, signal: AbortSignal | undefined): Promise<unknown> {
     checkAbort(signal ?? new AbortController().signal);
-    if (!this.#child?.stdin.writable || this.#closed) return Promise.reject(new ForgeError('ToolExecutionError', `MCP server ${this.options.name} is not connected.`));
+    if (!this.#child?.stdin.writable || this.#closed) return Promise.reject(new MarsError('ToolExecutionError', `MCP server ${this.options.name} is not connected.`));
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
       let abort = () => {};
@@ -157,12 +157,12 @@ export class McpStdioClient {
       const wrappedReject = (error: unknown) => settle(() => reject(error));
       const timer = setTimeout(() => {
         this.#pending.delete(id);
-        wrappedReject(new ForgeError('TimeoutError', `MCP request ${method} timed out.`));
+        wrappedReject(new MarsError('TimeoutError', `MCP request ${method} timed out.`));
       }, this.options.timeoutMs);
       abort = () => {
         clearTimeout(timer);
         this.#pending.delete(id);
-        wrappedReject(new ForgeError(signal?.reason?.name === 'TimeoutError' ? 'TimeoutError' : 'CancelledError', 'MCP request cancelled.'));
+        wrappedReject(new MarsError(signal?.reason?.name === 'TimeoutError' ? 'TimeoutError' : 'CancelledError', 'MCP request cancelled.'));
       };
       this.#pending.set(id, { resolve: wrappedResolve, reject: wrappedReject, timer });
       if (signal) {
@@ -170,7 +170,7 @@ export class McpStdioClient {
         signal.addEventListener('abort', abort, { once: true });
       }
       try { this.#child!.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`); }
-      catch (error) { clearTimeout(timer); this.#pending.delete(id); wrappedReject(new ForgeError('ToolExecutionError', error instanceof Error ? error.message : 'MCP request failed.')); }
+      catch (error) { clearTimeout(timer); this.#pending.delete(id); wrappedReject(new MarsError('ToolExecutionError', error instanceof Error ? error.message : 'MCP request failed.')); }
     });
   }
   #onData(chunk: string): void {
@@ -194,10 +194,10 @@ export class McpStdioClient {
     this.#pending.delete(id);
     clearTimeout(pending.timer);
     const error = object(record?.error);
-    if (error) pending.reject(new ForgeError('ToolExecutionError', typeof error.message === 'string' ? `MCP ${error.message}` : 'MCP request failed.'));
+    if (error) pending.reject(new MarsError('ToolExecutionError', typeof error.message === 'string' ? `MCP ${error.message}` : 'MCP request failed.'));
     else pending.resolve(record?.result);
   }
-  #failPending(error: ForgeError): void {
+  #failPending(error: MarsError): void {
     for (const [id, pending] of this.#pending) { clearTimeout(pending.timer); pending.reject(error); this.#pending.delete(id); }
   }
 }

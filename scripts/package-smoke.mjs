@@ -48,7 +48,7 @@ try {
   assert.equal((await run(npx, ['--no-install', 'mars', '--version'], consumer)).stdout.trim(), expectedVersion);
 
   const sdkSmoke = path.join(consumer, 'sdk-smoke.mjs');
-  await writeFile(sdkSmoke, "import { createForge, FakeProvider, keychainAvailable } from '@alvz93/mars';\nif (typeof createForge !== 'function' || typeof FakeProvider !== 'function' || !keychainAvailable()) process.exit(1);\n");
+  await writeFile(sdkSmoke, "import * as sdk from '@alvz93/mars';\nif (typeof sdk.createMars !== 'function' || typeof sdk.MarsError !== 'function') process.exit(1);\nif (JSON.stringify(Object.keys(sdk).sort()) !== JSON.stringify(['MarsError', 'createMars'])) process.exit(1);\n");
   await run(process.execPath, [sdkSmoke], consumer);
 
   const globalRoot = path.join(root, 'global');

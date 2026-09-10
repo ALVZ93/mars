@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { Policy } from './index.js';
 
 export interface MarsConfig {
@@ -76,7 +76,7 @@ export function defaultConfigPath(env: NodeJS.ProcessEnv = process.env): string 
 export function projectConfigPath(workspace: string): string { return join(workspace, '.mars', 'config.json'); }
 export function configPaths(workspace: string, env: NodeJS.ProcessEnv = process.env): ConfigPaths {
   const user = defaultConfigPath(env);
-  return { user, legacyUser: join(dirname(user), '..', 'forge', 'config.json'), project: projectConfigPath(workspace), legacyProject: join(workspace, '.forge', 'config.json') };
+  return { user, legacyUser: join(dirname(user), '..', 'mars', 'config.json'), project: projectConfigPath(workspace), legacyProject: join(workspace, '.mars', 'config.json') };
 }
 
 function isPolicy(value: unknown): value is Policy { return value === 'allow' || value === 'ask' || value === 'deny'; }
@@ -84,11 +84,11 @@ function optionalString(value: unknown): string | undefined { return typeof valu
 function positive(value: unknown, fallback: number): number {
   if (value === undefined) return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 2_147_483_647) throw new ForgeError('ConfigurationError', 'Config limits must be positive integers.');
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 2_147_483_647) throw new MarsError('ConfigurationError', 'Config limits must be positive integers.');
   return parsed;
 }
 function parseConfig(value: unknown): ConfigPatch {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ForgeError('ConfigurationError', 'MARS config must be a JSON object.');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MarsError('ConfigurationError', 'MARS config must be a JSON object.');
   const source = value as Record<string, unknown>;
   const model = source.model;
   const routing = source.routing;
@@ -98,63 +98,63 @@ function parseConfig(value: unknown): ConfigPatch {
   const mcp = source.mcp;
   const result: ConfigPatch = {};
   if (model !== undefined) {
-    if (!model || typeof model !== 'object' || Array.isArray(model)) throw new ForgeError('ConfigurationError', 'Config model must be an object.');
+    if (!model || typeof model !== 'object' || Array.isArray(model)) throw new MarsError('ConfigurationError', 'Config model must be an object.');
     result.model = { default: optionalString((model as Record<string, unknown>).default) };
   }
   if (routing !== undefined) {
-    if (!routing || typeof routing !== 'object' || Array.isArray(routing)) throw new ForgeError('ConfigurationError', 'Config routing must be an object.');
+    if (!routing || typeof routing !== 'object' || Array.isArray(routing)) throw new MarsError('ConfigurationError', 'Config routing must be an object.');
     const value = routing as Record<string, unknown>;
-    if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new ForgeError('ConfigurationError', 'Config routing.enabled must be boolean.');
+    if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new MarsError('ConfigurationError', 'Config routing.enabled must be boolean.');
     result.routing = { ...(value.enabled === undefined ? {} : { enabled: value.enabled }), ...(optionalString(value.planner) ? { planner: optionalString(value.planner) } : {}), ...(optionalString(value.implementer) ? { implementer: optionalString(value.implementer) } : {}), ...(optionalString(value.reviewer) ? { reviewer: optionalString(value.reviewer) } : {}), ...(optionalString(value.verifier) ? { verifier: optionalString(value.verifier) } : {}) };
   }
   if (permissions !== undefined) {
-    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) throw new ForgeError('ConfigurationError', 'Config permissions must be an object.');
+    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) throw new MarsError('ConfigurationError', 'Config permissions must be an object.');
     const value = permissions as Record<string, unknown>;
     for (const key of ['shell', 'destructiveShell', 'network', 'gitCommit', 'gitPush']) {
-      if (value[key] !== undefined && !isPolicy(value[key])) throw new ForgeError('ConfigurationError', `Config permissions.${key} must be allow, ask or deny.`);
+      if (value[key] !== undefined && !isPolicy(value[key])) throw new MarsError('ConfigurationError', `Config permissions.${key} must be allow, ask or deny.`);
     }
     result.permissions = {};
     for (const key of ['shell', 'destructiveShell', 'network', 'gitCommit', 'gitPush'] as const) if (value[key] !== undefined) result.permissions[key] = value[key] as Policy;
   }
   if (limits !== undefined) {
-    if (!limits || typeof limits !== 'object' || Array.isArray(limits)) throw new ForgeError('ConfigurationError', 'Config limits must be an object.');
+    if (!limits || typeof limits !== 'object' || Array.isArray(limits)) throw new MarsError('ConfigurationError', 'Config limits must be an object.');
     const value = limits as Record<string, unknown>;
     result.limits = {};
     const maxRetries = value.maxRetries;
     if (maxRetries !== undefined) {
       const parsed = typeof maxRetries === 'number' ? maxRetries : Number(maxRetries);
-      if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 100) throw new ForgeError('ConfigurationError', 'Config limits.maxRetries must be an integer from 0 to 100.');
+      if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 100) throw new MarsError('ConfigurationError', 'Config limits.maxRetries must be an integer from 0 to 100.');
       result.limits.maxRetries = parsed;
     }
     for (const key of ['maxTurns', 'maxToolCalls', 'timeoutMs', 'maxContextChars', 'retryDelayMs'] as const) if (value[key] !== undefined) result.limits[key] = positive(value[key], DEFAULT_CONFIG.limits[key]);
   }
   if (verification !== undefined) {
-    if (!verification || typeof verification !== 'object' || Array.isArray(verification)) throw new ForgeError('ConfigurationError', 'Config verification must be an object.');
+    if (!verification || typeof verification !== 'object' || Array.isArray(verification)) throw new MarsError('ConfigurationError', 'Config verification must be an object.');
     const commands = (verification as Record<string, unknown>).commands;
-    if (!Array.isArray(commands) || commands.length > 32 || commands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096)) throw new ForgeError('ConfigurationError', 'Config verification.commands must contain at most 32 non-empty commands.');
+    if (!Array.isArray(commands) || commands.length > 32 || commands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096)) throw new MarsError('ConfigurationError', 'Config verification.commands must contain at most 32 non-empty commands.');
     result.verification = { commands: commands.map(command => command.trim()) };
   }
   if (mcp !== undefined) {
-    if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) throw new ForgeError('ConfigurationError', 'Config mcp must be an object.');
+    if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) throw new MarsError('ConfigurationError', 'Config mcp must be an object.');
     const servers = (mcp as Record<string, unknown>).servers;
-    if (!Array.isArray(servers) || servers.length > 32) throw new ForgeError('ConfigurationError', 'Config mcp.servers must be an array with at most 32 entries.');
+    if (!Array.isArray(servers) || servers.length > 32) throw new MarsError('ConfigurationError', 'Config mcp.servers must be an array with at most 32 entries.');
     result.mcp = { servers: servers.map(parseMcpServer) };
   }
   return result;
 }
 
 function parseMcpServer(value: unknown): McpServerConfig {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ForgeError('ConfigurationError', 'Each MCP server must be an object.');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MarsError('ConfigurationError', 'Each MCP server must be an object.');
   const source = value as Record<string, unknown>;
   const name = optionalString(source.name);
   const command = optionalString(source.command);
-  if (!name || !command) throw new ForgeError('ConfigurationError', 'Each MCP server needs a name and command.');
+  if (!name || !command) throw new MarsError('ConfigurationError', 'Each MCP server needs a name and command.');
   const args = source.args;
-  if (args !== undefined && (!Array.isArray(args) || args.length > 128 || args.some(item => typeof item !== 'string' || item.length > 4096))) throw new ForgeError('ConfigurationError', `MCP server ${name} has invalid args.`);
+  if (args !== undefined && (!Array.isArray(args) || args.length > 128 || args.some(item => typeof item !== 'string' || item.length > 4096))) throw new MarsError('ConfigurationError', `MCP server ${name} has invalid args.`);
   const cwd = source.cwd === undefined ? undefined : optionalString(source.cwd);
-  if (source.cwd !== undefined && !cwd) throw new ForgeError('ConfigurationError', `MCP server ${name} has an invalid cwd.`);
+  if (source.cwd !== undefined && !cwd) throw new MarsError('ConfigurationError', `MCP server ${name} has an invalid cwd.`);
   const env = source.env;
-  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env) || Object.entries(env).some(([key, item]) => !key || key.length > 256 || typeof item !== 'string' || item.length > 16_000))) throw new ForgeError('ConfigurationError', `MCP server ${name} has invalid env.`);
+  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env) || Object.entries(env).some(([key, item]) => !key || key.length > 256 || typeof item !== 'string' || item.length > 16_000))) throw new MarsError('ConfigurationError', `MCP server ${name} has invalid env.`);
   const timeoutMs = source.timeoutMs === undefined ? undefined : positive(source.timeoutMs, 30_000);
   return { name, command, ...(args ? { args: [...args] } : {}), ...(cwd ? { cwd } : {}), ...(env ? { env: { ...(env as Record<string, string>) } } : {}), ...(timeoutMs === undefined ? {} : { timeoutMs }) };
 }
@@ -192,12 +192,12 @@ async function readConfig(path: string): Promise<ConfigPatch | undefined> {
   try { raw = await readFile(path, 'utf8'); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw new ForgeError('ConfigurationError', `Could not read MARS config: ${path}`);
+    throw new MarsError('ConfigurationError', `Could not read MARS config: ${path}`);
   }
   try { return parseConfig(JSON.parse(raw)); }
   catch (error) {
-    if (error instanceof ForgeError) throw error;
-    throw new ForgeError('ConfigurationError', `Invalid JSON in MARS config: ${path}`);
+    if (error instanceof MarsError) throw error;
+    throw new MarsError('ConfigurationError', `Invalid JSON in MARS config: ${path}`);
   }
 }
 
@@ -225,6 +225,6 @@ export async function saveConfig(path: string, config: ConfigPatch): Promise<voi
     await rename(temporary, path);
   } catch {
     await unlink(temporary).catch(() => {});
-    throw new ForgeError('ConfigurationError', `Could not write MARS config: ${path}`);
+    throw new MarsError('ConfigurationError', `Could not write MARS config: ${path}`);
   }
 }

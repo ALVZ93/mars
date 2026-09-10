@@ -53,7 +53,7 @@ sigue siendo necesaria antes de etiquetar la primera release.
 
 ### 3. Uso cotidiano y personalización
 
-- [x] Corregir precedencia de skills por identidad: proyecto prevalece sobre usuario y `.mars` sobre `.forge`.
+- [x] Corregir precedencia de skills por identidad: proyecto prevalece sobre usuario y `.mars` sobre `.mars`.
 - [x] Actualizar skills relevantes al cambiar de tarea y al retomar sesión.
 - [x] Compactar turnos antiguos completos al alcanzar el límite, conservando instrucciones y la tarea actual.
 - [x] Añadir ejemplos completos de configuración global/proyecto, roles, permisos, skills y MCP.

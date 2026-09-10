@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { AuthContext, AuthMethod, AuthProvider, AuthStatus, Credential, OAuthCredential } from './index.js';
 
 export interface BrowserOAuthConfig {
@@ -30,7 +30,7 @@ const safeEndpoint = (value: string): URL => {
     const url = new URL(value);
     if (url.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error();
     return url;
-  } catch { throw new ForgeError('ConfigurationError', 'OAuth endpoint must use HTTPS.'); }
+  } catch { throw new MarsError('ConfigurationError', 'OAuth endpoint must use HTTPS.'); }
 };
 
 export class BrowserOAuthProvider implements AuthProvider {
@@ -41,14 +41,14 @@ export class BrowserOAuthProvider implements AuthProvider {
     safeEndpoint(config.authorizationEndpoint);
     safeEndpoint(config.tokenEndpoint);
     if (config.revokeEndpoint) safeEndpoint(config.revokeEndpoint);
-    if (!config.provider || !config.clientId || !config.scopes.length) throw new ForgeError('ConfigurationError', 'OAuth provider configuration is incomplete.');
+    if (!config.provider || !config.clientId || !config.scopes.length) throw new MarsError('ConfigurationError', 'OAuth provider configuration is incomplete.');
     this.#config = { ...config, callbackPath: config.callbackPath ?? '/oauth/callback', timeoutMs: config.timeoutMs ?? 120_000 };
     this.id = config.provider;
     this.displayName = config.displayName;
   }
   methods(): readonly AuthMethod[] { return ['oauth-pkce']; }
   async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method !== 'oauth-pkce') throw new ForgeError('ConfigurationError', `${this.displayName} does not support ${method}.`);
+    if (method !== 'oauth-pkce') throw new MarsError('ConfigurationError', `${this.displayName} does not support ${method}.`);
     const verifier = asBase64Url(randomBytes(48));
     const challenge = asBase64Url(createHash('sha256').update(verifier).digest());
     const state = asBase64Url(randomBytes(32));
@@ -71,21 +71,21 @@ export class BrowserOAuthProvider implements AuthProvider {
       try {
         const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
         if (requestUrl.pathname !== this.#config.callbackPath) { response.writeHead(404).end(); return; }
-        if (requestUrl.searchParams.get('state') !== state) { response.writeHead(400).end('Invalid OAuth state.'); finish(new ForgeError('AuthenticationError', 'OAuth state validation failed.')); return; }
+        if (requestUrl.searchParams.get('state') !== state) { response.writeHead(400).end('Invalid OAuth state.'); finish(new MarsError('AuthenticationError', 'OAuth state validation failed.')); return; }
         const providerError = requestUrl.searchParams.get('error');
-        if (providerError) { response.writeHead(400).end('MARS login was denied.'); finish(new ForgeError('AuthenticationError', 'OAuth authorization was denied.')); return; }
+        if (providerError) { response.writeHead(400).end('MARS login was denied.'); finish(new MarsError('AuthenticationError', 'OAuth authorization was denied.')); return; }
         const code = requestUrl.searchParams.get('code');
-        if (!code) { response.writeHead(400).end('Missing authorization code.'); finish(new ForgeError('AuthenticationError', 'OAuth response did not contain an authorization code.')); return; }
+        if (!code) { response.writeHead(400).end('Missing authorization code.'); finish(new MarsError('AuthenticationError', 'OAuth response did not contain an authorization code.')); return; }
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<p>MARS login complete. You can close this window.</p>');
         finish({ code });
-      } catch { response.writeHead(400).end('Invalid OAuth callback.'); finish(new ForgeError('AuthenticationError', 'Invalid OAuth callback.')); }
+      } catch { response.writeHead(400).end('Invalid OAuth callback.'); finish(new MarsError('AuthenticationError', 'Invalid OAuth callback.')); }
     });
-    const abort = () => finish(new ForgeError(context.signal.reason?.name === 'TimeoutError' ? 'TimeoutError' : 'CancelledError', 'OAuth login cancelled.'));
+    const abort = () => finish(new MarsError(context.signal.reason?.name === 'TimeoutError' ? 'TimeoutError' : 'CancelledError', 'OAuth login cancelled.'));
     context.signal.addEventListener('abort', abort, { once: true });
     try {
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
       const address = server.address();
-      if (!address || typeof address === 'string') throw new ForgeError('ConfigurationError', 'Could not allocate a local OAuth callback.');
+      if (!address || typeof address === 'string') throw new MarsError('ConfigurationError', 'Could not allocate a local OAuth callback.');
       const redirectUri = `http://127.0.0.1:${address.port}${this.#config.callbackPath}`;
       const authorization = safeEndpoint(this.#config.authorizationEndpoint);
       authorization.search = new URLSearchParams({
@@ -94,21 +94,21 @@ export class BrowserOAuthProvider implements AuthProvider {
         ...this.#config.authorizationParams,
       }).toString();
       await context.openUrl(authorization.toString());
-      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ForgeError('TimeoutError', 'OAuth login timed out.')), this.#config.timeoutMs); });
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new MarsError('TimeoutError', 'OAuth login timed out.')), this.#config.timeoutMs); });
       const result = await Promise.race([callback, timeout]);
       return await exchangeCode(this.#config, result.code, verifier, redirectUri, context.signal);
     } catch (error) {
-      if (error instanceof ForgeError) throw error;
-      throw new ForgeError('AuthenticationError', 'OAuth login failed.');
+      if (error instanceof MarsError) throw error;
+      throw new MarsError('AuthenticationError', 'OAuth login failed.');
     } finally {
       if (timer) clearTimeout(timer);
       context.signal.removeEventListener('abort', abort);
-      if (!settled) finish(new ForgeError('CancelledError', 'OAuth login cancelled.'));
+      if (!settled) finish(new MarsError('CancelledError', 'OAuth login cancelled.'));
       server.close();
     }
   }
   async refresh(credential: OAuthCredential, context: AuthContext): Promise<OAuthCredential> {
-    if (credential.provider !== this.id || credential.kind !== 'oauth' || !credential.refreshToken) throw new ForgeError('AuthenticationError', 'No refresh token is available.');
+    if (credential.provider !== this.id || credential.kind !== 'oauth' || !credential.refreshToken) throw new MarsError('AuthenticationError', 'No refresh token is available.');
     const endpoint = safeEndpoint(this.#config.tokenEndpoint);
     const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: this.#config.clientId, refresh_token: credential.refreshToken, ...this.#config.tokenParams });
     if (this.#config.clientSecret) body.set('client_secret', this.#config.clientSecret);
@@ -135,16 +135,16 @@ async function exchangeCode(config: BrowserOAuthConfig, code: string, verifier: 
 async function fetchToken(endpoint: URL, body: URLSearchParams, signal: AbortSignal): Promise<Record<string, unknown>> {
   let response: Response;
   try { response = await fetch(endpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body, signal }); }
-  catch { throw new ForgeError('AuthenticationError', 'OAuth token request failed.'); }
-  if (!response.ok) throw new ForgeError('AuthenticationError', 'OAuth token request was rejected.');
+  catch { throw new MarsError('AuthenticationError', 'OAuth token request failed.'); }
+  if (!response.ok) throw new MarsError('AuthenticationError', 'OAuth token request was rejected.');
   try {
     const json: unknown = await response.json();
     if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error();
     return json as Record<string, unknown>;
-  } catch { throw new ForgeError('AuthenticationError', 'OAuth token response was invalid.'); }
+  } catch { throw new MarsError('AuthenticationError', 'OAuth token response was invalid.'); }
 }
 function parseToken(value: Record<string, unknown>, provider: string, fallbackRefresh?: string): OAuthCredential {
-  if (typeof value.access_token !== 'string' || !value.access_token) throw new ForgeError('AuthenticationError', 'OAuth response did not contain an access token.');
+  if (typeof value.access_token !== 'string' || !value.access_token) throw new MarsError('AuthenticationError', 'OAuth response did not contain an access token.');
   const refreshToken = typeof value.refresh_token === 'string' && value.refresh_token ? value.refresh_token : fallbackRefresh;
   const expiresAt = expiry(value.expires_in);
   return {
@@ -160,7 +160,7 @@ export function openBrowser(url: string): Promise<void> {
   const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true });
-    child.once('error', () => reject(new ForgeError('ConfigurationError', 'Could not open the default browser.')));
+    child.once('error', () => reject(new MarsError('ConfigurationError', 'Could not open the default browser.')));
     child.once('spawn', () => { child.unref(); resolve(); });
   });
 }

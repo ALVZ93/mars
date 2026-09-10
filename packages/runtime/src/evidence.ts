@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 
 export interface SkillEvidence {
   name: string;
@@ -90,17 +90,17 @@ export class FileEvidenceStore implements EvidenceStore {
     return this.#serial(async () => {
       let raw: string;
       try { raw = await readFile(this.path, 'utf8'); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptySnapshot(); throw new ForgeError('ConfigurationError', 'Could not read MARS evidence.'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptySnapshot(); throw new MarsError('ConfigurationError', 'Could not read MARS evidence.'); }
       try {
         const parsed: unknown = JSON.parse(raw);
         if (!validSnapshot(parsed)) throw new Error();
         return clone(parsed);
-      } catch { throw new ForgeError('ConfigurationError', 'MARS evidence is invalid or corrupted.'); }
+      } catch { throw new MarsError('ConfigurationError', 'MARS evidence is invalid or corrupted.'); }
     });
   }
 
   async record(run: EvidenceRun): Promise<EvidenceSnapshot> {
-    if (!run || typeof run !== 'object' || typeof run.passed !== 'boolean') throw new ForgeError('ConfigurationError', 'Invalid evidence record.');
+    if (!run || typeof run !== 'object' || typeof run.passed !== 'boolean') throw new MarsError('ConfigurationError', 'Invalid evidence record.');
     return this.#serial(async () => {
       const snapshot = await this.#loadUnsafe();
       const now = new Date().toISOString();
@@ -141,7 +141,7 @@ export class FileEvidenceStore implements EvidenceStore {
   }
 
   async clear(): Promise<void> {
-    await this.#serial(async () => { await unlink(this.path).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ForgeError('ConfigurationError', 'Could not clear MARS evidence.'); }); });
+    await this.#serial(async () => { await unlink(this.path).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new MarsError('ConfigurationError', 'Could not clear MARS evidence.'); }); });
   }
 
   async #loadUnsafe(): Promise<EvidenceSnapshot> {
@@ -152,15 +152,15 @@ export class FileEvidenceStore implements EvidenceStore {
       return parsed;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptySnapshot();
-      if (error instanceof ForgeError) throw error;
-      throw new ForgeError('ConfigurationError', 'MARS evidence is invalid or corrupted.');
+      if (error instanceof MarsError) throw error;
+      throw new MarsError('ConfigurationError', 'MARS evidence is invalid or corrupted.');
     }
   }
   async #write(snapshot: EvidenceSnapshot): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.${randomUUID()}.tmp`;
     try { await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' }); await rename(temporary, this.path); }
-    catch { await unlink(temporary).catch(() => {}); throw new ForgeError('ConfigurationError', 'Could not write MARS evidence.'); }
+    catch { await unlink(temporary).catch(() => {}); throw new MarsError('ConfigurationError', 'Could not write MARS evidence.'); }
   }
   async #serial<T>(work: () => Promise<T>): Promise<T> {
     const next = this.#queue.then(work, work);

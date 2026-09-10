@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { z } from 'zod';
-import { ForgeError, checkAbort } from '../../core/src/index.js';
+import { MarsError, checkAbort } from '../../core/src/index.js';
 import type { Tool, ToolCall, ToolContext, ToolExecutor, ToolResult } from '../../core/src/index.js';
 import { Permissions, Workspace } from '../../runtime/src/index.js';
 import type { ShellExecution, ShellExecutor } from './sandbox.js';
@@ -22,7 +22,7 @@ export class ToolRegistry implements ToolExecutor {
   #tools = new Map<string, Tool>();
   constructor(tools: Tool[]) { for (const tool of tools) this.register(tool); }
   register(tool: Tool): void {
-    if (!tool.name || this.#tools.has(tool.name)) throw new ForgeError('ConfigurationError', `Duplicate tool name: ${tool.name || '(empty)'}.`);
+    if (!tool.name || this.#tools.has(tool.name)) throw new MarsError('ConfigurationError', `Duplicate tool name: ${tool.name || '(empty)'}.`);
     this.#tools.set(tool.name, tool);
   }
   get(name: string): Tool | undefined { return this.#tools.get(name); }
@@ -31,16 +31,16 @@ export class ToolRegistry implements ToolExecutor {
     try {
       checkAbort(signal);
       const tool = this.#tools.get(call.name);
-      if (!tool) throw new ForgeError('InvalidToolCallError', 'Unknown tool.');
+      if (!tool) throw new MarsError('InvalidToolCallError', 'Unknown tool.');
       let input: unknown;
       try { input = tool.validate(call.arguments); }
-      catch { throw new ForgeError('InvalidToolCallError', 'Arguments do not match the tool schema.'); }
+      catch { throw new MarsError('InvalidToolCallError', 'Arguments do not match the tool schema.'); }
       const content = await tool.execute(input, { signal });
       checkAbort(signal);
       return { content: truncate(content) };
     } catch (error) {
       checkAbort(signal);
-      if (error instanceof ForgeError) return { content: error.message, error: error.code };
+      if (error instanceof MarsError) return { content: error.message, error: error.code };
       // Raw OS/provider errors can contain paths, arguments or credentials.
       return { content: 'Tool execution failed.', error: 'ToolExecutionError' };
     }
@@ -64,7 +64,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
       const handle = await open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
       try {
         const stat = await handle.stat();
-        if (!stat.isFile() || stat.nlink > 1) throw new ForgeError('WorkspaceViolationError', 'Only regular, unlinked files are readable.');
+        if (!stat.isFile() || stat.nlink > 1) throw new MarsError('WorkspaceViolationError', 'Only regular, unlinked files are readable.');
         const buffer = Buffer.alloc(OUTPUT_LIMIT + 1);
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
         checkAbort(signal);
@@ -77,7 +77,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
       checkAbort(signal);
       await mkdir(path.dirname(target), { recursive: true });
       await workspace.resolve(input);
-      const temporary = path.join(path.dirname(target), `.forge-write-${randomUUID()}`);
+      const temporary = path.join(path.dirname(target), `.mars-write-${randomUUID()}`);
       const handle = await open(temporary, 'wx', 0o600);
       try {
         await handle.writeFile(content, { encoding: 'utf8', signal });
@@ -93,7 +93,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
     }),
     defineTool('shell', 'Run a shell command with the workspace as cwd. Requires approval; host mode is NOT an OS sandbox.', z.strictObject({ command: z.string().min(1).max(16_000), cwd: filePath.nullable(), timeout: z.number().int().min(1).max(120_000).nullable() }), async ({ command, cwd, timeout }, { signal }) => {
       const directory = await workspace.resolve(cwd ?? '.');
-      if (!(await lstat(directory)).isDirectory()) throw new ForgeError('WorkspaceViolationError', 'Shell cwd must be a directory.');
+      if (!(await lstat(directory)).isDirectory()) throw new MarsError('WorkspaceViolationError', 'Shell cwd must be a directory.');
       await permissions.checkShell(command, directory, signal);
       checkAbort(signal);
       return formatShellExecution(await shellExecutor(command, directory, timeout ?? 30_000, signal));
@@ -101,7 +101,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
     defineTool('search_files', 'Search text in project files without traversing dependencies, build output, VCS metadata or sensitive files.', z.strictObject({ query: z.string().min(1).max(2_000), path: filePath.nullable(), caseSensitive: z.boolean().nullable(), maxResults: z.number().int().min(1).max(200).nullable() }), async ({ query, path: input, caseSensitive, maxResults }, { signal }) => {
       const root = await workspace.resolve(input ?? '.');
       await permissions.check('filesystem.read', root, signal);
-      if (!(await lstat(root)).isDirectory()) throw new ForgeError('WorkspaceViolationError', 'Search path must be a directory.');
+      if (!(await lstat(root)).isDirectory()) throw new MarsError('WorkspaceViolationError', 'Search path must be a directory.');
       return searchFiles(root, query, caseSensitive ?? false, maxResults ?? 100, signal, workspace.root);
     }),
     defineTool('git', 'Inspect repository state with read-only Git operations: status, diff, log or branch.', z.strictObject({ action: z.enum(['status', 'diff', 'log', 'branch']), path: filePath.nullable() }), async ({ action, path: input }, { signal }) => {
@@ -113,7 +113,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
   ];
 }
 
-const SKIP_DIRECTORIES = new Set(['.git', '.hg', '.svn', '.mars', '.forge', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo']);
+const SKIP_DIRECTORIES = new Set(['.git', '.hg', '.svn', '.mars', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo']);
 const SENSITIVE_NAME = /^(?:\.env(?:\..*)?|credentials(?:\..*)?|.*\.(?:pem|key|p12|pfx)|id_(?:rsa|ed25519))$/i;
 const MAX_SEARCH_FILES = 10_000;
 
@@ -208,7 +208,7 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
       output = formatShellExecution(execution);
       passed = exitCode === 0;
     } catch (error) {
-      output = error instanceof ForgeError ? `${error.code}: ${error.message}` : 'Verification command failed.';
+      output = error instanceof MarsError ? `${error.code}: ${error.message}` : 'Verification command failed.';
       passed = false;
     }
     checks.push({ name, command, exitCode, passed, output: truncate(output) });
@@ -236,11 +236,11 @@ function executeProcess(command: string, args: string[], cwd: string, timeout: n
     if (includeStderr) child.stderr.setEncoding('utf8').on('data', collect);
     const stop = () => { if (child.pid) child.kill(); };
     signal.addEventListener('abort', stop, { once: true });
-    child.on('error', () => { signal.removeEventListener('abort', stop); reject(new ForgeError('ToolExecutionError', `Unable to start ${command}.`)); });
+    child.on('error', () => { signal.removeEventListener('abort', stop); reject(new MarsError('ToolExecutionError', `Unable to start ${command}.`)); });
     child.on('close', code => {
       signal.removeEventListener('abort', stop);
       try { checkAbort(signal); } catch (error) { reject(error); return; }
-      if (code !== 0) reject(new ForgeError('ToolExecutionError', `git exited with code ${code ?? 'unknown'}.\n${output}`));
+      if (code !== 0) reject(new MarsError('ToolExecutionError', `git exited with code ${code ?? 'unknown'}.\n${output}`));
       else resolve(truncate(output || '(no output)'));
     });
   });
@@ -280,8 +280,8 @@ export async function executeShell(command: string, cwd: string, timeout: number
         catch (error) { reject(error); }
       };
       if (child.pid && windows) {
-        const killScript = `$ids = [System.Collections.Generic.List[int]]::new(); $ids.Add(${child.pid}); for ($i = 0; $i -lt $ids.Count; $i++) { $parentId = $ids[$i]; Get-CimInstance Win32_Process -Filter \"ParentProcessId = $parentId\" -ErrorAction SilentlyContinue | ForEach-Object { $processId = [int]$_.ProcessId; if (-not $ids.Contains($processId)) { $ids.Add($processId) } } }; $ordered = $ids.ToArray(); [array]::Reverse($ordered); foreach ($processId in $ordered) { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue }`;
-        const killer = spawn(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', killScript], { windowsHide: true, stdio: 'ignore' });
+        const taskkill = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+        const killer = spawn(taskkill, ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
         let finished = false;
         const finishOnce = () => { if (!finished) { finished = true; setTimeout(finish, 250); } };
         killer.on('error', () => { child.kill(); finishOnce(); });
@@ -299,7 +299,7 @@ export async function executeShell(command: string, cwd: string, timeout: number
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', stop);
-      reject(new ForgeError('ToolExecutionError', 'Unable to start the configured platform shell.'));
+      reject(new MarsError('ToolExecutionError', 'Unable to start the configured platform shell.'));
     });
     child.on('close', code => {
       if (settled) return;

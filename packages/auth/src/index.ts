@@ -1,4 +1,4 @@
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import { FileCredentialStore, defaultCredentialPath } from './store.js';
 
 export type AuthMethod = 'oauth-pkce' | 'oauth-device' | 'api-key' | 'environment' | 'local';
@@ -52,7 +52,7 @@ export interface AuthProvider {
 export class AuthRegistry {
   #providers = new Map<string, AuthProvider>();
   register(provider: AuthProvider): void {
-    if (this.#providers.has(provider.id)) throw new ForgeError('ConfigurationError', `Duplicate auth provider: ${provider.id}`);
+    if (this.#providers.has(provider.id)) throw new MarsError('ConfigurationError', `Duplicate auth provider: ${provider.id}`);
     this.#providers.set(provider.id, provider);
   }
   get(id: string): AuthProvider | undefined { return this.#providers.get(id); }
@@ -84,16 +84,16 @@ const environmentNames: Record<string, string[]> = {
 };
 
 function sanitiseCredential(provider: string, credential: Credential): Credential {
-  if (credential.provider !== provider) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
+  if (credential.provider !== provider) throw new MarsError('AuthenticationError', 'Invalid credential for the selected provider.');
   if (credential.kind === 'api-key') {
-    if (!credential.secret.trim()) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
+    if (!credential.secret.trim()) throw new MarsError('AuthenticationError', 'Invalid credential for the selected provider.');
     return { ...credential, secret: credential.secret.trim() };
   }
   if (credential.kind === 'external') {
-    if (!credential.source.trim()) throw new ForgeError('AuthenticationError', 'Invalid external credential reference.');
+    if (!credential.source.trim()) throw new MarsError('AuthenticationError', 'Invalid external credential reference.');
     return { ...credential, source: credential.source.trim() };
   }
-  if (!credential.accessToken.trim()) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
+  if (!credential.accessToken.trim()) throw new MarsError('AuthenticationError', 'Invalid credential for the selected provider.');
   return {
     ...credential,
     accessToken: credential.accessToken.trim(),

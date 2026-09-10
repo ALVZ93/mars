@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
-import { ForgeError } from '../../core/src/index.js';
+import { MarsError } from '../../core/src/index.js';
 import type { Credential, CredentialStore } from './index.js';
 
 function clone(credential: Credential): Credential {
@@ -75,7 +75,7 @@ export class FileCredentialStore implements CredentialStore {
     await this.#serial(async () => {
       try { await unlink(this.path); }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ForgeError('ConfigurationError', 'Could not remove the MARS file credential store.');
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new MarsError('ConfigurationError', 'Could not remove the MARS file credential store.');
       }
     });
   }
@@ -91,7 +91,7 @@ export class FileCredentialStore implements CredentialStore {
     try { raw = await readFile(this.path, 'utf8'); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw new ForgeError('ConfigurationError', 'Could not read the MARS credential store.');
+      throw new MarsError('ConfigurationError', 'Could not read the MARS credential store.');
     }
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -103,7 +103,7 @@ export class FileCredentialStore implements CredentialStore {
       }
       return values;
     } catch {
-      throw new ForgeError('ConfigurationError', 'The MARS credential store is invalid. Remove it and log in again.');
+      throw new MarsError('ConfigurationError', 'The MARS credential store is invalid. Remove it and log in again.');
     }
   }
 
@@ -115,7 +115,7 @@ export class FileCredentialStore implements CredentialStore {
       await rename(temporary, this.path);
     } catch {
       await unlink(temporary).catch(() => {});
-      throw new ForgeError('ConfigurationError', 'Could not write the MARS credential store.');
+      throw new MarsError('ConfigurationError', 'Could not write the MARS credential store.');
     }
   }
 }
@@ -158,25 +158,25 @@ export class KeychainCredentialStore implements CredentialStore {
   readonly service: string;
   readonly #keytar: KeytarLike;
   constructor(service = 'mars', keytar = loadKeytar()) {
-    if (!keytar) throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or use explicit file storage.');
+    if (!keytar) throw new MarsError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or use explicit file storage.');
     this.service = service;
     this.#keytar = keytar;
   }
   async get(provider: string): Promise<Credential | undefined> {
-    const raw = await this.#keytar.getPassword(this.service, provider).catch(() => { throw new ForgeError('ConfigurationError', 'Could not read the native MARS credential store.'); });
+    const raw = await this.#keytar.getPassword(this.service, provider).catch(() => { throw new MarsError('ConfigurationError', 'Could not read the native MARS credential store.'); });
     if (!raw) return undefined;
     try {
       const value: unknown = JSON.parse(raw);
       if (!isCredential(value) || value.provider !== provider) throw new Error();
       return clone(value);
-    } catch { throw new ForgeError('ConfigurationError', 'The native MARS credential store is invalid. Log in again.'); }
+    } catch { throw new MarsError('ConfigurationError', 'The native MARS credential store is invalid. Log in again.'); }
   }
   async set(credential: Credential): Promise<void> {
-    if (!isCredential(credential)) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
-    await this.#keytar.setPassword(this.service, credential.provider, JSON.stringify(credential)).catch(() => { throw new ForgeError('ConfigurationError', 'Could not write the native MARS credential store.'); });
+    if (!isCredential(credential)) throw new MarsError('AuthenticationError', 'Invalid credential for the selected provider.');
+    await this.#keytar.setPassword(this.service, credential.provider, JSON.stringify(credential)).catch(() => { throw new MarsError('ConfigurationError', 'Could not write the native MARS credential store.'); });
   }
   async delete(provider: string): Promise<void> {
-    await this.#keytar.deletePassword(this.service, provider).catch(() => { throw new ForgeError('ConfigurationError', 'Could not delete the native MARS credential.'); });
+    await this.#keytar.deletePassword(this.service, provider).catch(() => { throw new MarsError('ConfigurationError', 'Could not delete the native MARS credential.'); });
   }
 }
 
@@ -187,16 +187,16 @@ export async function migrateFileCredentials(source = new FileCredentialStore(),
   for (const credential of credentials) {
     await target.set(credential);
     const copied = await target.get(credential.provider);
-    if (!copied || JSON.stringify(copied) !== JSON.stringify(credential)) throw new ForgeError('ConfigurationError', `Could not verify migrated credential for ${credential.provider}.`);
+    if (!copied || JSON.stringify(copied) !== JSON.stringify(credential)) throw new MarsError('ConfigurationError', `Could not verify migrated credential for ${credential.provider}.`);
   }
   await source.remove();
   return credentials.map(credential => credential.provider);
 }
 export function createCredentialStore(options: { mode?: CredentialStoreMode; filePath?: string; service?: string } = {}): CredentialStore {
   const mode = options.mode ?? (process.env.MARS_CREDENTIAL_STORE as CredentialStoreMode | undefined) ?? 'auto';
-  if (!['auto', 'file', 'keychain'].includes(mode)) throw new ForgeError('ConfigurationError', 'MARS_CREDENTIAL_STORE must be auto, file or keychain.');
+  if (!['auto', 'file', 'keychain'].includes(mode)) throw new MarsError('ConfigurationError', 'MARS_CREDENTIAL_STORE must be auto, file or keychain.');
   if (mode === 'file') return new FileCredentialStore(options.filePath);
   const keytar = loadKeytar();
-  if (!keytar) throw new ForgeError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or explicitly set MARS_CREDENTIAL_STORE=file for development.');
+  if (!keytar) throw new MarsError('ConfigurationError', 'The native credential backend is unavailable. Reinstall optional dependencies or explicitly set MARS_CREDENTIAL_STORE=file for development.');
   return new KeychainCredentialStore(options.service ?? 'mars', keytar);
 }

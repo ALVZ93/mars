@@ -18,8 +18,7 @@
     "node": ">=24.0.0"
   },
   "bin": {
-    "mars": "dist/apps/cli/src/index.js",
-    "forge": "dist/apps/cli/src/index.js"
+    "mars": "dist/apps/cli/src/index.js"
   },
   "exports": {
     ".": {
@@ -43,8 +42,7 @@
     "test": "pnpm build && node --test --test-concurrency=1 tests/*.test.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "site": "node apps/site/server.mjs",
-    "mars": "node dist/apps/cli/src/index.js",
-    "forge": "node dist/apps/cli/src/index.js"
+    "mars": "node dist/apps/cli/src/index.js"
   },
   "dependencies": {
     "@openai/codex": "^0.153.4",

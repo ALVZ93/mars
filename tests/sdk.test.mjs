@@ -1,17 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createForge, FakeProvider } from '../dist/packages/sdk/src/index.js';
+import { createMars } from '../dist/packages/sdk/src/index.js';
+import { FakeProvider } from '../dist/packages/providers/src/fake.js';
 
 test('SDK keeps session history in memory and prevents overlapping turns', async () => {
-  const forge = await createForge({ workspace: process.cwd(), provider: new FakeProvider(), model: 'scripted' });
-  const first = forge.run('one');
-  await assert.rejects(forge.run('overlap'), { code: 'ConfigurationError' });
+  const mars = await createMars({ workspace: process.cwd(), provider: new FakeProvider(), model: 'scripted' });
+  const first = mars.run('one');
+  await assert.rejects(mars.run('overlap'), { code: 'ConfigurationError' });
   await first;
-  await forge.run('two');
-  assert.equal(forge.session.messages.filter(message => message.role === 'user').length, 2);
-  const snapshot = forge.session;
+  await mars.run('two');
+  assert.equal(mars.session.messages.filter(message => message.role === 'user').length, 2);
+  const snapshot = mars.session;
   snapshot.messages.length = 0;
-  assert.ok(forge.session.messages.length > 0);
+  assert.ok(mars.session.messages.length > 0);
 });
 
 test('failed runs preserve observations so the next turn knows about completed effects', async () => {
@@ -23,9 +24,9 @@ test('failed runs preserve observations so the next turn knows about completed e
       return { role: 'assistant', content: 'Recovered', toolCalls: [] };
     },
   ]);
-  const forge = await createForge({ workspace: process.cwd(), provider, model: 'scripted' });
-  await assert.rejects(forge.run('read then fail'));
-  assert.equal((await forge.run('continue')).content, 'Recovered');
+  const mars = await createMars({ workspace: process.cwd(), provider, model: 'scripted' });
+  await assert.rejects(mars.run('read then fail'));
+  assert.equal((await mars.run('continue')).content, 'Recovered');
 });
 
 test('long sessions compact complete old turns and keep the current task', async () => {
@@ -35,12 +36,12 @@ test('long sessions compact complete old turns and keep the current task', async
     { role: 'assistant', content: 'x'.repeat(800), toolCalls: [] },
     request => { secondRequest = request; return { role: 'assistant', content: 'continued', toolCalls: [] }; },
   ]);
-  const forge = await createForge({
+  const mars = await createMars({
     workspace: process.cwd(), provider, model: 'scripted', includeProjectContext: false, maxContextChars: 1_100,
     emit: event => { if (event.type === 'context:compacted') compacted++; },
   });
-  await forge.run('first task');
-  await forge.run('current task');
+  await mars.run('first task');
+  await mars.run('current task');
   assert.equal(compacted, 1);
   assert.ok(secondRequest.messages.some(message => message.role === 'system' && /context compaction/.test(message.content)));
   assert.ok(secondRequest.messages.some(message => message.role === 'user' && message.content === 'current task'));

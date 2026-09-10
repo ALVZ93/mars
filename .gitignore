@@ -6,6 +6,5 @@ dist/
 .env
 .env.*
 *.tgz
-.forge/
 .mars/
 hello.txt

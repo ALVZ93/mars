@@ -1,5 +1,5 @@
 import type { AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
-import { checkAbort, ForgeError } from '../../core/src/index.js';
+import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 
 type FetchLike = typeof fetch;
@@ -10,7 +10,7 @@ function safeRoot(value: string): string {
     const url = new URL(value);
     if (url.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error();
     return url.toString().replace(/\/+$/, '');
-  } catch { throw new ForgeError('ConfigurationError', 'Gemini endpoint must use HTTPS.'); }
+  } catch { throw new MarsError('ConfigurationError', 'Gemini endpoint must use HTTPS.'); }
 }
 function asObject(value: unknown): Json | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : undefined; }
 function asString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
@@ -33,7 +33,7 @@ function contents(messages: AgentMessage[]): { system?: { parts: Array<{ text: s
 }
 function tools(request: ModelRequest): unknown[] { return [{ functionDeclarations: request.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }]; }
 async function* parseSse(response: Response, signal: AbortSignal): AsyncGenerator<Json> {
-  if (!response.body) throw new ForgeError('ProviderUnavailableError', 'Gemini returned no stream body.');
+  if (!response.body) throw new MarsError('ProviderUnavailableError', 'Gemini returned no stream body.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -52,7 +52,7 @@ async function* parseSse(response: Response, signal: AbortSignal): AsyncGenerato
         const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n').trim();
         if (data) {
           try { const value: unknown = JSON.parse(data); if (asObject(value)) yield value as Json; }
-          catch { throw new ForgeError('ProviderUnavailableError', 'Gemini returned malformed streaming data.'); }
+          catch { throw new MarsError('ProviderUnavailableError', 'Gemini returned malformed streaming data.'); }
         }
         index = buffer.indexOf('\n\n');
       }
@@ -73,7 +73,7 @@ export class GeminiProvider implements ModelProvider {
   readonly #root: string;
   readonly #projectId?: string;
   constructor(credential: Credential, options: GeminiProviderOptions = {}) {
-    if (credential.provider !== this.id || (credential.kind !== 'api-key' && credential.kind !== 'oauth')) throw new ForgeError('AuthenticationError', 'A Gemini API key or Google Cloud browser credential is required.');
+    if (credential.provider !== this.id || (credential.kind !== 'api-key' && credential.kind !== 'oauth')) throw new MarsError('AuthenticationError', 'A Gemini API key or Google Cloud browser credential is required.');
     this.#credential = credential;
     this.#fetch = options.fetch ?? fetch;
     this.#root = safeRoot(options.baseUrl ?? process.env.GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com');
@@ -92,12 +92,12 @@ export class GeminiProvider implements ModelProvider {
     const body = { ...converted, ...(request.tools.length ? { tools: tools(request) } : {}) };
     let response: Response;
     try { response = await this.#fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal }); }
-    catch { checkAbort(signal); throw new ForgeError('ProviderUnavailableError', 'Gemini request failed. Check connectivity and model availability.'); }
+    catch { checkAbort(signal); throw new MarsError('ProviderUnavailableError', 'Gemini request failed. Check connectivity and model availability.'); }
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) throw new ForgeError('AuthenticationError', 'Gemini rejected the credential or project access.');
-      if (response.status === 429) throw new ForgeError('RateLimitError', 'Gemini rate or quota limit reached.');
-      if (response.status === 413) throw new ForgeError('ContextLimitError', 'Gemini rejected the request because it is too large.');
-      throw new ForgeError('ProviderUnavailableError', 'Gemini request failed. Check connectivity and model availability.');
+      if (response.status === 401 || response.status === 403) throw new MarsError('AuthenticationError', 'Gemini rejected the credential or project access.');
+      if (response.status === 429) throw new MarsError('RateLimitError', 'Gemini rate or quota limit reached.');
+      if (response.status === 413) throw new MarsError('ContextLimitError', 'Gemini rejected the request because it is too large.');
+      throw new MarsError('ProviderUnavailableError', 'Gemini request failed. Check connectivity and model availability.');
     }
     let content = '';
     const toolCalls: ToolCall[] = [];
@@ -117,7 +117,7 @@ export class GeminiProvider implements ModelProvider {
         const call = asObject(value.functionCall);
         if (call) {
           const name = asString(call.name);
-          if (!name) throw new ForgeError('InvalidToolCallError', 'Gemini returned a tool call without a name.');
+          if (!name) throw new MarsError('InvalidToolCallError', 'Gemini returned a tool call without a name.');
           toolCalls.push({ id: `${name}-${toolCalls.length + 1}`, name, arguments: call.args ?? {} });
         }
       }

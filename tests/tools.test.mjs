@@ -7,7 +7,7 @@ import { Workspace, Permissions } from '../dist/packages/runtime/src/index.js';
 import { ToolRegistry, workspaceTools, shellEnvironment, OUTPUT_LIMIT, sandboxStatus, createSandboxShell } from '../dist/packages/tools/src/index.js';
 
 async function setup(t, permissions = new Permissions('deny')) {
-  const temp = await mkdtemp(path.join(tmpdir(), 'forge-test-'));
+  const temp = await mkdtemp(path.join(tmpdir(), 'mars-test-'));
   assert.equal(path.dirname(temp), tmpdir());
   t.after(() => rm(temp, { recursive: true, force: true }));
   const root = path.join(temp, 'workspace');
@@ -27,8 +27,8 @@ test('sandbox status is explicit and host mode remains backward compatible', asy
 });
 test('read and atomic write, including new parent directories and replacement', async t => {
   const { execute, root } = await setup(t);
-  assert.deepEqual(await execute('write_file', { path: 'nested/hello.txt', content: 'hello forge' }), { content: 'File written.' });
-  assert.deepEqual(await execute('read_file', { path: 'nested/hello.txt' }), { content: 'hello forge' });
+  assert.deepEqual(await execute('write_file', { path: 'nested/hello.txt', content: 'hello mars' }), { content: 'File written.' });
+  assert.deepEqual(await execute('read_file', { path: 'nested/hello.txt' }), { content: 'hello mars' });
   await execute('write_file', { path: 'nested/hello.txt', content: 'replaced' });
   assert.equal(await readFile(path.join(root, 'nested/hello.txt'), 'utf8'), 'replaced');
 });

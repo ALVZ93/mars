@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { ForgeError, checkAbort } from '../../core/src/index.js';
+import { MarsError, checkAbort } from '../../core/src/index.js';
 import { executeShell } from './index.js';
 
 export type SandboxMode = 'host' | 'docker';
@@ -40,21 +40,21 @@ export function sandboxStatus(options: SandboxOptions = {}): SandboxStatus {
 export function createSandboxShell(workspaceRoot: string, options: SandboxOptions = {}): ShellExecutor {
   const mode = options.mode ?? 'host';
   if (mode === 'host') return executeShell;
-  if (mode !== 'docker') throw new ForgeError('ConfigurationError', 'Sandbox mode must be host or docker.');
+  if (mode !== 'docker') throw new MarsError('ConfigurationError', 'Sandbox mode must be host or docker.');
   const image = options.image?.trim() || DEFAULT_IMAGE;
   const network = options.network ?? 'none';
-  if (network !== 'none' && network !== 'host') throw new ForgeError('ConfigurationError', 'Sandbox network must be none or host.');
+  if (network !== 'none' && network !== 'host') throw new MarsError('ConfigurationError', 'Sandbox network must be none or host.');
   const memoryMb = options.memoryMb ?? 2048;
-  if (!Number.isSafeInteger(memoryMb) || memoryMb < 128 || memoryMb > 65_536) throw new ForgeError('ConfigurationError', 'Sandbox memory must be an integer from 128 to 65536 MB.');
+  if (!Number.isSafeInteger(memoryMb) || memoryMb < 128 || memoryMb > 65_536) throw new MarsError('ConfigurationError', 'Sandbox memory must be an integer from 128 to 65536 MB.');
   const cpus = options.cpus ?? 2;
-  if (!Number.isFinite(cpus) || cpus <= 0 || cpus > 64) throw new ForgeError('ConfigurationError', 'Sandbox CPUs must be greater than 0 and at most 64.');
+  if (!Number.isFinite(cpus) || cpus <= 0 || cpus > 64) throw new MarsError('ConfigurationError', 'Sandbox CPUs must be greater than 0 and at most 64.');
   return (command, cwd, timeout, signal) => executeDockerShell(workspaceRoot, command, cwd, timeout, signal, { image, network, memoryMb, cpus });
 }
 
 async function executeDockerShell(workspaceRoot: string, command: string, cwd: string, timeout: number, parent: AbortSignal, options: { image: string; network: 'none' | 'host'; memoryMb: number; cpus: number }): Promise<ShellExecution> {
   checkAbort(parent);
   const relative = path.relative(workspaceRoot, cwd);
-  if (path.isAbsolute(relative) || relative.startsWith(`..${path.sep}`)) throw new ForgeError('WorkspaceViolationError', 'Sandbox cwd must be inside the workspace.');
+  if (path.isAbsolute(relative) || relative.startsWith(`..${path.sep}`)) throw new MarsError('WorkspaceViolationError', 'Sandbox cwd must be inside the workspace.');
   const containerCwd = `/workspace${relative ? `/${relative.split(path.sep).join('/')}` : ''}`;
   const args = [
     'run', '--rm', '--init', '--network', options.network,
@@ -78,8 +78,8 @@ async function executeDockerShell(workspaceRoot: string, command: string, cwd: s
     signal.addEventListener('abort', stop, { once: true });
     child.on('error', error => {
       signal.removeEventListener('abort', stop);
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') reject(new ForgeError('ConfigurationError', 'Docker is not installed or is not on PATH.'));
-      else reject(new ForgeError('ToolExecutionError', 'Unable to start Docker sandbox.'));
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') reject(new MarsError('ConfigurationError', 'Docker is not installed or is not on PATH.'));
+      else reject(new MarsError('ToolExecutionError', 'Unable to start Docker sandbox.'));
     });
     child.on('close', code => {
       signal.removeEventListener('abort', stop);
