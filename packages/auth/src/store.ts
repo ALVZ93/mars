@@ -14,6 +14,7 @@ export function isCredential(value: unknown): value is Credential {
   const record = value as Record<string, unknown>;
   if (typeof record.provider !== 'string' || !record.provider || typeof record.kind !== 'string') return false;
   if (record.kind === 'api-key') return typeof record.secret === 'string';
+  if (record.kind === 'external') return typeof record.source === 'string' && Boolean(record.source);
   if (record.kind !== 'oauth' || typeof record.accessToken !== 'string') return false;
   if (record.refreshToken !== undefined && typeof record.refreshToken !== 'string') return false;
   if (record.expiresAt !== undefined && (typeof record.expiresAt !== 'number' || !Number.isFinite(record.expiresAt))) return false;

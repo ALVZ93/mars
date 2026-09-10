@@ -47,6 +47,8 @@
     "forge": "node dist/apps/cli/src/index.js"
   },
   "dependencies": {
+    "@openai/codex": "^0.153.4",
+    "@openai/codex-sdk": "^0.153.4",
     "openai": "^6.0.0",
     "zod": "^4.0.0"
   },

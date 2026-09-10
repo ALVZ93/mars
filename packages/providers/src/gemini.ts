@@ -1,6 +1,6 @@
 import type { AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
 import { checkAbort, ForgeError } from '../../core/src/index.js';
-import type { Credential } from '../../auth/src/index.js';
+import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 
 type FetchLike = typeof fetch;
 type Json = Record<string, unknown>;
@@ -68,7 +68,7 @@ async function* parseSse(response: Response, signal: AbortSignal): AsyncGenerato
 export interface GeminiProviderOptions { fetch?: FetchLike; baseUrl?: string; projectId?: string }
 export class GeminiProvider implements ModelProvider {
   readonly id = 'gemini';
-  readonly #credential: Credential;
+  readonly #credential: ApiKeyCredential | OAuthCredential;
   readonly #fetch: FetchLike;
   readonly #root: string;
   readonly #projectId?: string;

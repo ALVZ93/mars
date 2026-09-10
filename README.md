@@ -18,7 +18,7 @@ MARS es un arnés de agentes local para trabajar sobre repositorios desde la ter
 - Funciona en Windows, macOS y Linux.
 - Las credenciales se guardan en Credential Manager, Keychain o Secret Service.
 - No requiere una cuenta de MARS, backend central ni telemetría remota.
-- Cada usuario aporta sus propias credenciales de proveedor.
+- Cada usuario conecta su suscripción de ChatGPT/Codex o aporta sus propias credenciales de proveedor.
 
 Licencia [Apache 2.0](LICENSE) · [Repositorio](https://github.com/ALVZ93/mars) · [Incidencias](https://github.com/ALVZ93/mars/issues) · [Seguridad](SECURITY.md)
 
@@ -93,7 +93,26 @@ mars "Responde con: instalación correcta" --model fake:scripted --no-save
 
 Puedes borrar la carpeta `mars-test` al terminar.
 
-## OpenAI en un minuto
+## OpenAI con tu suscripción de ChatGPT
+
+MARS incluye el runtime oficial de Codex y puede usar los límites incluidos en una suscripción de ChatGPT compatible. Codex gestiona el navegador, los tokens y su renovación; MARS no los lee ni los guarda.
+
+```sh
+mars login openai-codex
+mars auth status
+mars config set model.default openai-codex:gpt-5.6-sol
+mars "Analiza este repositorio y explícame cómo está organizado"
+```
+
+En un servidor sin navegador usa el flujo de código de dispositivo:
+
+```sh
+mars login openai-codex --device
+```
+
+Este acceso consume la cuota de Codex de tu plan de ChatGPT. La disponibilidad de modelos y los límites dependen de la cuenta y del workspace elegidos.
+
+## OpenAI con API key
 
 MARS admite OpenAI mediante una API key. El comando abre una entrada oculta y guarda la clave en el almacén seguro del sistema:
 
@@ -136,7 +155,8 @@ mars
 
 | Proveedor | Identificador | Autenticación estable |
 | --- | --- | --- |
-| OpenAI API | `openai:MODELO` | API key |
+| OpenAI / Codex | `openai-codex:MODELO` | Suscripción de ChatGPT mediante el runtime oficial de Codex |
+| OpenAI API | `openai:MODELO` | API key con facturación por consumo |
 | Anthropic API | `anthropic:MODELO` | API key |
 | Kimi Code | `kimi-code:MODELO` | API key |
 | Google Gemini API | `gemini:MODELO` | API key u OAuth con cliente propio |
@@ -144,7 +164,7 @@ mars
 | OpenRouter | `openrouter:MODELO` | API key |
 | Ollama local | `ollama:MODELO` | No requiere login |
 
-Los accesos directos mediante suscripciones de consumo no se anuncian como estables. OpenAI Codex y Kimi subscription auth permanecen experimentales y desactivados por defecto; el login de claude.ai no se ofrece a aplicaciones de terceros sin aprobación. Consulta la [matriz de proveedores](docs/auth/provider-matrix.md).
+El acceso por suscripción de OpenAI usa exclusivamente el runtime oficial de Codex. Kimi subscription auth permanece experimental y desactivado por defecto; el login de claude.ai no se ofrece a aplicaciones de terceros sin aprobación. Consulta la [matriz de proveedores](docs/auth/provider-matrix.md).
 
 ### Variables de entorno para automatización
 
@@ -211,6 +231,7 @@ mars "Revisa el diff actual" --workflow review --route
 | `mars init` | Crea `.mars/config.json` en el proyecto |
 | `mars doctor` | Diagnostica Node, Git, configuración, credenciales y sandbox |
 | `mars login PROVEEDOR --api-key` | Guarda una API key de forma interactiva |
+| `mars login openai-codex` | Conecta una suscripción de ChatGPT mediante Codex |
 | `mars auth status` | Muestra proveedores conectados |
 | `mars auth logout PROVEEDOR` | Elimina una credencial |
 | `mars auth migrate` | Migra el antiguo archivo de credenciales al llavero nativo |

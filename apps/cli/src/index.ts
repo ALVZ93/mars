@@ -53,7 +53,6 @@ Authentication:
   mars auth logout PROVIDER
   mars auth migrate                    Move file credentials to the native keychain
   MARS_CREDENTIAL_STORE=auto|keychain|file
-  MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH=1 (development only)
 
 Options:
   --model       Explicit provider:model, or MARS_MODEL/FORGE_MODEL
@@ -132,7 +131,7 @@ async function loginCommand(providerId: string | undefined, values: Record<strin
     return;
   }
   if (providerId === 'anthropic') throw new ForgeError('ConfigurationError', 'Anthropic no permite ofrecer login de claude.ai en productos de terceros sin aprobación previa; usa `mars login anthropic --api-key`.');
-  if ((providerId === 'openai-codex' || providerId === 'kimi-code') && process.env.MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH !== '1') {
+  if (providerId === 'kimi-code' && process.env.MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH !== '1') {
     throw new ForgeError('ConfigurationError', `El login de suscripción de ${providerId} es experimental y está desactivado. Usa un proveedor con API key o establece MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH=1 para desarrollo.`);
   }
   if (providerId === 'openai' || providerId === 'qwen' || providerId === 'openrouter' || providerId === 'ollama') throw new ForgeError('ConfigurationError', `${providerId} no ofrece login de navegador en MARS; usa su configuración local o --api-key.`);
@@ -259,7 +258,7 @@ async function providerForTarget(target: string, credentials: CredentialStore, v
   if (!credential) throw new ForgeError('AuthenticationError', `Connect ${providerId} with mars login ${providerId}.`);
   const refreshed = await refreshCredential(auth, credential, { store: credentials, context: authContext(new AbortController().signal) });
   if (providerId === 'openai-codex') {
-    if (refreshed.kind !== 'oauth') throw new ForgeError('AuthenticationError', 'OpenAI Codex requires browser authentication.');
+    if (refreshed.kind !== 'external' || refreshed.source !== 'codex-cli') throw new ForgeError('AuthenticationError', 'OpenAI Codex requires ChatGPT authentication managed by Codex.');
     return new OpenAICodexProvider(refreshed);
   }
   if (refreshed.kind !== 'oauth' && refreshed.kind !== 'api-key') throw new ForgeError('AuthenticationError', 'Provider credential is invalid.');

@@ -15,7 +15,13 @@ export interface OAuthCredential {
   accountId?: string;
   metadata?: Record<string, string>;
 }
-export type Credential = ApiKeyCredential | OAuthCredential;
+export interface ExternalCredential {
+  provider: string;
+  kind: 'external';
+  /** Runtime that owns and refreshes the actual credential. */
+  source: string;
+}
+export type Credential = ApiKeyCredential | OAuthCredential | ExternalCredential;
 
 export type AuthNotification =
   | { type: 'auth-url'; url: string; instructions?: string }
@@ -83,6 +89,10 @@ function sanitiseCredential(provider: string, credential: Credential): Credentia
     if (!credential.secret.trim()) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
     return { ...credential, secret: credential.secret.trim() };
   }
+  if (credential.kind === 'external') {
+    if (!credential.source.trim()) throw new ForgeError('AuthenticationError', 'Invalid external credential reference.');
+    return { ...credential, source: credential.source.trim() };
+  }
   if (!credential.accessToken.trim()) throw new ForgeError('AuthenticationError', 'Invalid credential for the selected provider.');
   return {
     ...credential,
@@ -127,7 +137,7 @@ export async function refreshCredential(provider: AuthProvider, credential: Cred
 
 export const providerAuthCatalog = [
   { id: 'openai', name: 'OpenAI API', browser: 'api-key', apiKey: true, subscription: false },
-  { id: 'openai-codex', name: 'OpenAI / Codex', browser: 'experimental; disabled by default', apiKey: false, subscription: true },
+  { id: 'openai-codex', name: 'OpenAI / Codex', browser: 'ChatGPT subscription via Codex', apiKey: false, subscription: true },
   { id: 'anthropic', name: 'Anthropic / Claude', browser: 'not available to unapproved third-party apps', apiKey: true, subscription: false },
   { id: 'kimi-code', name: 'Kimi Code', browser: 'experimental device flow; disabled by default', apiKey: true, subscription: true },
   { id: 'gemini', name: 'Google Gemini API', browser: 'oauth-pkce (own Cloud client)', apiKey: true, subscription: false },
@@ -137,5 +147,6 @@ export const providerAuthCatalog = [
 ] as const;
 
 export { BrowserOAuthProvider, openBrowser, type BrowserOAuthConfig } from './oauth.js';
-export { AnthropicAuthProvider, KimiCodeAuthProvider, OpenAICodexAuthProvider } from './subscriptions.js';
+export { AnthropicAuthProvider, KimiCodeAuthProvider } from './subscriptions.js';
+export { OpenAICodexAuthProvider } from './codex.js';
 export { GoogleGeminiAuthProvider } from './google.js';

@@ -190,96 +190,11 @@ async function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 function authStatus(credential: Credential | undefined, provider: string, method: AuthMethod): AuthStatus {
   if (!credential || credential.provider !== provider) return { authenticated: false, message: 'Not connected.' };
   if (credential.kind === 'api-key') return { authenticated: true, method: 'api-key' };
+  if (credential.kind === 'external') return { authenticated: true, method: 'local' };
   if (credential.expiresAt && credential.expiresAt <= Date.now()) return { authenticated: false, method, expiresAt: credential.expiresAt, message: 'Access token expired.' };
   return { authenticated: true, method, expiresAt: credential.expiresAt };
 }
 
-export interface OpenAICodexAuthOptions {
-  clientId?: string;
-  authorizationEndpoint?: string;
-  tokenEndpoint?: string;
-  deviceUserCodeEndpoint?: string;
-  deviceTokenEndpoint?: string;
-  deviceVerificationUri?: string;
-  fetch?: FetchLike;
-  callbackPort?: number;
-  timeoutMs?: number;
-}
-const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const OPENAI_CODEX_AUTH_BASE = 'https://auth.openai.com';
-const OPENAI_CODEX_SCOPE = 'openid profile email offline_access';
-export class OpenAICodexAuthProvider implements AuthProvider {
-  readonly id = 'openai-codex';
-  readonly displayName = 'OpenAI / Codex';
-  readonly #options: Required<Pick<OpenAICodexAuthOptions, 'clientId' | 'authorizationEndpoint' | 'tokenEndpoint' | 'deviceUserCodeEndpoint' | 'deviceTokenEndpoint' | 'deviceVerificationUri' | 'callbackPort' | 'timeoutMs'>> & { fetch?: FetchLike };
-  constructor(options: OpenAICodexAuthOptions = {}) {
-    this.#options = {
-      clientId: options.clientId ?? process.env.MARS_OPENAI_CODEX_CLIENT_ID ?? OPENAI_CODEX_CLIENT_ID,
-      authorizationEndpoint: options.authorizationEndpoint ?? `${OPENAI_CODEX_AUTH_BASE}/oauth/authorize`,
-      tokenEndpoint: options.tokenEndpoint ?? `${OPENAI_CODEX_AUTH_BASE}/oauth/token`,
-      deviceUserCodeEndpoint: options.deviceUserCodeEndpoint ?? `${OPENAI_CODEX_AUTH_BASE}/api/accounts/deviceauth/usercode`,
-      deviceTokenEndpoint: options.deviceTokenEndpoint ?? `${OPENAI_CODEX_AUTH_BASE}/api/accounts/deviceauth/token`,
-      deviceVerificationUri: options.deviceVerificationUri ?? `${OPENAI_CODEX_AUTH_BASE}/codex/device`,
-      callbackPort: options.callbackPort ?? 1455,
-      timeoutMs: options.timeoutMs ?? 120_000,
-      fetch: options.fetch,
-    };
-  }
-  methods(): readonly AuthMethod[] { return ['oauth-pkce', 'oauth-device']; }
-  async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method === 'oauth-pkce') {
-      return browserPkce({ provider: this.id, clientId: this.#options.clientId, authorizationEndpoint: this.#options.authorizationEndpoint, tokenEndpoint: this.#options.tokenEndpoint, scopes: OPENAI_CODEX_SCOPE, callbackPath: '/auth/callback', callbackPort: this.#options.callbackPort, timeoutMs: this.#options.timeoutMs, fetch: this.#options.fetch, authorizationParams: { id_token_add_organizations: 'true', codex_cli_simplified_flow: 'true', originator: 'codex_cli_rs' }, parseToken: parseCodexToken }, context);
-    }
-    if (method !== 'oauth-device') throw new ForgeError('ConfigurationError', `${this.displayName} does not support ${method}.`);
-    return this.#deviceLogin(context);
-  }
-  async refresh(credential: OAuthCredential, context: AuthContext): Promise<OAuthCredential> {
-    if (credential.provider !== this.id || !credential.refreshToken) throw new ForgeError('AuthenticationError', 'No refresh token is available.');
-    const value = await requestJson(this.#options.fetch ?? fetch, this.#options.tokenEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: credential.refreshToken, client_id: this.#options.clientId }) }, context.signal);
-    return parseCodexToken(value, this.id, credential.refreshToken);
-  }
-  async logout(): Promise<void> {}
-  async status(credential: Credential | undefined): Promise<AuthStatus> { return authStatus(credential, this.id, 'oauth-pkce'); }
-  async #deviceLogin(context: AuthContext): Promise<OAuthCredential> {
-    const response = await requestJson(this.#options.fetch ?? fetch, this.#options.deviceUserCodeEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ client_id: this.#options.clientId }) }, context.signal);
-    const deviceAuthId = typeof response.device_auth_id === 'string' ? response.device_auth_id : undefined;
-    const userCode = typeof response.user_code === 'string' ? response.user_code : undefined;
-    const interval = Number(response.interval);
-    if (!deviceAuthId || !userCode || !Number.isFinite(interval) || interval < 0) throw new ForgeError('AuthenticationError', 'OpenAI device authentication response was invalid.');
-    const expiresInSeconds = 15 * 60;
-    const verificationUri = this.#options.deviceVerificationUri;
-    context.notify?.({ type: 'device-code', verificationUri, userCode, expiresAt: Date.now() + expiresInSeconds * 1000 });
-    await context.openUrl(verificationUri).catch(() => {});
-    const result = await pollDevice<{ authorizationCode: string; codeVerifier: string }>({ intervalSeconds: interval, expiresInSeconds, signal: context.signal, poll: async () => {
-      let response: Response;
-      try { response = await (this.#options.fetch ?? fetch)(this.#options.deviceTokenEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ device_auth_id: deviceAuthId, user_code: userCode }), signal: context.signal }); }
-      catch { if (context.signal.aborted) throw abortError(context.signal); return { status: 'failed', message: 'OpenAI device authentication request failed.' }; }
-      const value = await response.json().catch(() => ({})) as TokenShape;
-      if (response.ok && typeof value.authorization_code === 'string' && typeof value.code_verifier === 'string') return { status: 'complete', value: { authorizationCode: value.authorization_code, codeVerifier: value.code_verifier } };
-      if (response.status === 403 || response.status === 404 || value.error === 'deviceauth_authorization_pending') return { status: 'pending' };
-      if (value.error === 'slow_down') return { status: 'slow_down' };
-      return { status: 'failed', message: 'OpenAI device authentication was rejected.' };
-    }});
-    const value = await requestJson(this.#options.fetch ?? fetch, this.#options.tokenEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: this.#options.clientId, code: result.authorizationCode, code_verifier: result.codeVerifier, redirect_uri: `${OPENAI_CODEX_AUTH_BASE}/deviceauth/callback` }) }, context.signal);
-    return parseCodexToken(value, this.id);
-  }
-}
-
-function decodeAccountId(accessToken: string): string | undefined {
-  try {
-    const payload = accessToken.split('.')[1];
-    if (!payload) return undefined;
-    const value = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
-    const auth = value['https://api.openai.com/auth'];
-    return auth && typeof auth === 'object' && typeof (auth as Record<string, unknown>).chatgpt_account_id === 'string' ? (auth as Record<string, unknown>).chatgpt_account_id as string : undefined;
-  } catch { return undefined; }
-}
-function parseCodexToken(value: TokenShape, provider: string, fallbackRefresh?: string): OAuthCredential {
-  const credential = parseOAuthToken(value, provider, fallbackRefresh);
-  const accountId = decodeAccountId(credential.accessToken);
-  if (!accountId) throw new ForgeError('AuthenticationError', 'OpenAI did not return a ChatGPT account identifier.');
-  return { ...credential, accountId };
-}
 
 export interface AnthropicAuthOptions {
   clientId?: string;

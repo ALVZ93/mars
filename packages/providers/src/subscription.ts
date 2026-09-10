@@ -1,5 +1,5 @@
 import type { AssistantMessage, AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
-import { randomUUID } from 'node:crypto';
+import { Codex } from '@openai/codex-sdk';
 import { checkAbort, ForgeError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 import { OpenAICompatibleProvider } from './openai.js';
@@ -127,7 +127,7 @@ export interface AnthropicTransportOptions {
 }
 export class AnthropicProvider implements ModelProvider {
   readonly id: string = 'anthropic';
-  readonly #credential: Credential;
+  readonly #credential: ApiKeyCredential | OAuthCredential;
   readonly #fetch: FetchLike;
   readonly #url: string;
   readonly #maxTokens: number;
@@ -233,114 +233,82 @@ export class QwenProvider extends OpenAICompatibleProvider {
   }
 }
 
-interface CodexProviderOptions { fetch?: FetchLike; baseUrl?: string }
-type ResponsesInput = Array<Record<string, unknown>>;
-function codexInput(messages: AgentMessage[]): { instructions?: string; input: ResponsesInput } {
-  const instructions = messages.filter(message => message.role === 'system').map(message => message.content).join('\n').trim();
-  const input: ResponsesInput = [];
-  for (const message of messages) {
-    if (message.role === 'system') continue;
-    if (message.role === 'user') input.push({ role: 'user', content: [{ type: 'input_text', text: message.content }] });
-    else if (message.role === 'assistant') {
-      if (message.content) input.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: message.content }] });
-      for (const call of message.toolCalls) input.push({ type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.arguments) });
-    } else if (message.role === 'tool') input.push({ type: 'function_call_output', call_id: message.callId, output: message.error ? `${message.error}: ${message.content}` : message.content });
-  }
-  return { ...(instructions ? { instructions } : {}), input };
+interface CodexThreadLike {
+  run(input: string, options: { outputSchema: unknown; signal: AbortSignal }): Promise<{ finalResponse: string; usage: { input_tokens: number; output_tokens: number } | null }>;
 }
-function codexTools(request: ModelRequest): unknown[] { return request.tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.parameters, strict: false })); }
-async function* codexEvents(response: Response, signal: AbortSignal): AsyncGenerator<Json> { yield* sse(response, signal); }
+interface CodexLike { startThread(options: Record<string, unknown>): CodexThreadLike }
+interface CodexProviderOptions { codex?: CodexLike }
+
+const codexOutputSchema = {
+  type: 'object',
+  properties: {
+    content: { type: 'string' },
+    toolCalls: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, name: { type: 'string' }, arguments: {} },
+        required: ['id', 'name', 'arguments'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['content', 'toolCalls'],
+  additionalProperties: false,
+} as const;
+
+function codexPrompt(request: ModelRequest): string {
+  return [
+    'Act only as the language-model component inside the MARS agent harness.',
+    'Do not inspect files, run commands, browse, edit, or use any built-in Codex tool.',
+    'Return the next assistant message as the required JSON object. Use only the supplied MARS tools.',
+    'When a tool is needed, return its call and wait for the next transcript. Otherwise return the final answer with an empty toolCalls array.',
+    `MARS tools:\n${JSON.stringify(request.tools)}`,
+    `Conversation transcript:\n${JSON.stringify(request.messages)}`,
+  ].join('\n\n');
+}
 
 export class OpenAICodexProvider implements ModelProvider {
   readonly id = 'openai-codex';
-  readonly #credential: OAuthCredential;
-  readonly #fetch: FetchLike;
-  readonly #url: string;
-  readonly #sessionId = randomUUID();
-  constructor(credential: OAuthCredential, options: CodexProviderOptions = {}) {
-    if (credential.provider !== this.id || credential.kind !== 'oauth' || !credential.accessToken || !credential.accountId) throw new ForgeError('AuthenticationError', 'An OpenAI Codex browser credential is required.');
-    this.#credential = credential;
-    this.#fetch = options.fetch ?? fetch;
-    this.#url = safeEndpoint(endpoint(options.baseUrl ?? 'https://chatgpt.com/backend-api', '/codex/responses'));
+  readonly #codex: CodexLike;
+  constructor(credential: Credential, options: CodexProviderOptions = {}) {
+    if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new ForgeError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
+    this.#codex = options.codex ?? new Codex();
   }
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
     checkAbort(signal);
-    const headers = new Headers({
-      authorization: `Bearer ${this.#credential.accessToken}`,
-      'chatgpt-account-id': this.#credential.accountId!,
-      originator: 'codex_cli_rs',
-      'user-agent': 'codex_cli_rs/0.1.0',
-      'session-id': this.#sessionId,
-      'x-client-request-id': this.#sessionId,
-      accept: 'text/event-stream',
-      'content-type': 'application/json',
-      'openai-beta': 'responses=experimental',
-    });
-    const converted = codexInput(request.messages);
-    const body = {
-      model: request.model,
-      store: false,
-      stream: true,
-      instructions: converted.instructions ?? 'You are MARS, a coding agent.',
-      input: converted.input,
-      include: ['reasoning.encrypted_content'],
-      text: { verbosity: 'low' },
-      ...(request.tools.length ? { tools: codexTools(request) } : {}),
-      tool_choice: 'auto',
-      parallel_tool_calls: true,
-    };
-    const response = await sendRequest(this.#fetch, this.#url, { method: 'POST', headers, body: JSON.stringify(body) }, signal, 'OpenAI Codex');
-    await ensureOk(response, 'OpenAI Codex');
-    let content = '';
-    const tools = new Map<number, { id: string; name: string; json: string }>();
-    let complete = false;
-    let usage: { inputTokens: number; outputTokens: number } | undefined;
-    for await (const event of codexEvents(response, signal)) {
+    let result: Awaited<ReturnType<CodexThreadLike['run']>>;
+    try {
+      result = await this.#codex.startThread({
+        model: request.model,
+        sandboxMode: 'read-only',
+        workingDirectory: process.cwd(),
+        skipGitRepoCheck: true,
+        approvalPolicy: 'never',
+        networkAccessEnabled: false,
+        webSearchMode: 'disabled',
+        threadSource: 'mars',
+      }).run(codexPrompt(request), { outputSchema: codexOutputSchema, signal });
+    } catch (error) {
       checkAbort(signal);
-      const type = asString(event.type);
-      if (type === 'response.output_item.added') {
-        const item = event.item;
-        if (item && typeof item === 'object' && !Array.isArray(item) && (item as Json).type === 'function_call') {
-          const value = item as Json;
-          const index = typeof event.output_index === 'number' ? event.output_index : tools.size;
-          tools.set(index, { id: asString(value.call_id) ?? '', name: asString(value.name) ?? '', json: asString(value.arguments) ?? '' });
-        }
-      } else if (type === 'response.output_text.delta') {
-        const delta = asString(event.delta) ?? '';
-        content += delta;
-        if (delta) yield { type: 'text', text: delta };
-      } else if (type === 'response.function_call_arguments.delta') {
-        const index = typeof event.output_index === 'number' ? event.output_index : -1;
-        const call = tools.get(index);
-        if (!call) throw new ForgeError('InvalidToolCallError', 'OpenAI Codex returned an unknown tool call.');
-        call.json += asString(event.delta) ?? '';
-      } else if (type === 'response.function_call_arguments.done') {
-        const index = typeof event.output_index === 'number' ? event.output_index : -1;
-        const call = tools.get(index);
-        if (call) call.json = asString(event.arguments) ?? call.json;
-      } else if (type === 'response.failed' || type === 'error') {
-        const error = event.error;
-        const record = error && typeof error === 'object' && !Array.isArray(error) ? error as Json : undefined;
-        const detail = diagnostic(asString(event.message) ?? asString(record?.message) ?? asString(event.code) ?? asString(record?.code));
-        throw new ForgeError('ProviderUnavailableError', `OpenAI Codex returned a failed response${detail ? `: ${detail}` : '.'}`);
-      }
-      else if (type === 'response.completed' || type === 'response.done' || type === 'response.incomplete') {
-        const responseData = event.response;
-        const counts = (responseData as { usage?: { input_tokens?: number; output_tokens?: number } } | undefined)?.usage;
-        if (Number.isSafeInteger(counts?.input_tokens) && Number.isSafeInteger(counts?.output_tokens) && counts!.input_tokens! >= 0 && counts!.output_tokens! >= 0) usage = { inputTokens: counts!.input_tokens!, outputTokens: counts!.output_tokens! };
-        const status = responseData && typeof responseData === 'object' && !Array.isArray(responseData) ? asString((responseData as Json).status) : undefined;
-        if (status && !['completed', 'in_progress', 'queued'].includes(status)) throw new ForgeError('ProviderUnavailableError', 'OpenAI Codex response was incomplete.');
-        complete = true;
-      }
+      const message = diagnostic(error instanceof Error ? error.message : String(error));
+      if (/login|auth|credential|401|unauthorized/i.test(message ?? '')) throw new ForgeError('AuthenticationError', 'Codex requires a ChatGPT login. Run `mars login openai-codex`.');
+      throw new ForgeError('ProviderUnavailableError', `Codex runtime failed${message ? `: ${message}` : '.'}`);
     }
-    if (!complete) throw new ForgeError('ProviderUnavailableError', 'OpenAI Codex stream ended prematurely.');
-    const toolCalls: ToolCall[] = [];
-    for (const call of tools.values()) {
-      if (!call.id || !call.name) throw new ForgeError('InvalidToolCallError', 'OpenAI Codex returned an incomplete tool call.');
-      let args: unknown;
-      try { args = JSON.parse(call.json || '{}'); } catch { throw new ForgeError('InvalidToolCallError', 'OpenAI Codex returned malformed tool arguments.'); }
-      toolCalls.push({ id: call.id, name: call.name, arguments: args });
-    }
-    yield { type: 'done', message: { role: 'assistant', content, toolCalls }, usage };
+    let parsed: unknown;
+    try { parsed = JSON.parse(result.finalResponse); }
+    catch { throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.');
+    const value = parsed as { content?: unknown; toolCalls?: unknown };
+    if (typeof value.content !== 'string' || !Array.isArray(value.toolCalls)) throw new ForgeError('ProviderUnavailableError', 'Codex returned invalid structured output.');
+    const toolCalls: ToolCall[] = value.toolCalls.map(call => {
+      if (!call || typeof call !== 'object' || Array.isArray(call)) throw new ForgeError('InvalidToolCallError', 'Codex returned an invalid tool call.');
+      const item = call as { id?: unknown; name?: unknown; arguments?: unknown };
+      if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name) throw new ForgeError('InvalidToolCallError', 'Codex returned an invalid tool call.');
+      return { id: item.id, name: item.name, arguments: item.arguments };
+    });
+    if (value.content) yield { type: 'text', text: value.content };
+    const usage = result.usage ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } : undefined;
+    yield { type: 'done', message: { role: 'assistant', content: value.content, toolCalls }, usage };
   }
 }

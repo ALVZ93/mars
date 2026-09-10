@@ -38,19 +38,18 @@ verificada una tarea que no ejecutó ninguna comprobación.
 
 ### 2. Credenciales y contratos de autenticación
 
-`packages/auth/src/store.ts:createCredentialStore` cae automáticamente a JSON si no
-puede cargar keytar. El handoff prohíbe ese fallback como default de release.
-Los adapters de suscripción incluyen client IDs por defecto; la matriz actual no
-demuestra autorización oficial para que MARS los use como cliente de terceros.
+`createCredentialStore` exige el llavero nativo salvo que el desarrollador seleccione
+explícitamente el archivo. OpenAI Codex delega la sesión al runtime oficial y MARS no
+incluye su client ID, tokens ni endpoints privados.
 
 - [ ] Almacenamiento nativo probado en cada plataforma; archivo solo mediante elección explícita de desarrollo.
 - [x] Definir migración comprobada del archivo al llavero y fallo claro sin backend nativo.
 - [x] Auditar con documentación oficial vigente qué flujos de suscripción son admitidos para MARS.
-- [x] Resolver el desacuerdo entre el handoff y ADR 002: Anthropic browser auth queda bloqueado; OpenAI Codex y Kimi quedan experimentales y desactivados por defecto.
+- [x] Resolver el desacuerdo entre el handoff y ADR 002: Anthropic browser auth queda bloqueado; OpenAI Codex usa el SDK/runtime oficial y Kimi queda experimental.
 - [ ] Validar login, refresh, logout y tool calls con cuentas reales de los proveedores que se anuncien.
 
-No se concluye aquí que esos flujos estén permitidos o prohibidos: queda pendiente
-validación externa. Tener un adapter y tests simulados no resuelve ese punto.
+La integración de OpenAI sigue el SDK oficial. La validación manual con una cuenta real
+sigue siendo necesaria antes de etiquetar la primera release.
 
 ### 3. Uso cotidiano y personalización
 

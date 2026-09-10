@@ -14,7 +14,7 @@ Todos los cambios relevantes se documentarán aquí. El proyecto sigue [Semantic
 
 - Los checks de proyecto usan el mismo executor, permisos y sandbox que el shell del agente.
 - Las sesiones compactan turnos antiguos completos al alcanzar el límite local de contexto.
-- OpenAI Codex y Kimi subscription auth quedan experimentales y desactivados por defecto.
+- OpenAI Codex usa el SDK/runtime oficial para acceder mediante suscripción de ChatGPT; Kimi subscription auth queda experimental y desactivado por defecto.
 
 ### Security
 

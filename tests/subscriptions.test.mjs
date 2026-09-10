@@ -40,40 +40,15 @@ test('file credential store persists OAuth metadata and replaces records atomica
   assert.equal(await store.get('openai-codex'), undefined);
 });
 
-test('OpenAI Codex browser login uses PKCE, fixed callback contract and account metadata', async t => {
-  let tokenRequest;
-  const server = createServer(async (request, response) => {
-    if (request.url === '/token') {
-      let body = '';
-      for await (const chunk of request) body += chunk;
-      tokenRequest = new URLSearchParams(body);
-      const payload = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-1' } })).toString('base64url');
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ access_token: `x.${payload}.y`, refresh_token: 'refresh', expires_in: 3600 }));
-      return;
-    }
-    response.writeHead(404).end();
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => server.close());
-  const address = server.address();
-  const base = `http://127.0.0.1:${address.port}`;
-  const provider = new OpenAICodexAuthProvider({ clientId: 'mars-test', authorizationEndpoint: `${base}/authorize`, tokenEndpoint: `${base}/token`, callbackPort: 0 });
-  let notification;
-  const credential = await provider.login('oauth-pkce', { signal: signal(), openUrl: async url => {
-    const auth = new URL(url);
-    assert.equal(auth.searchParams.get('client_id'), 'mars-test');
-    assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
-    const callback = new URL(auth.searchParams.get('redirect_uri'));
-    callback.searchParams.set('state', auth.searchParams.get('state'));
-    callback.searchParams.set('code', 'code-1');
-    await fetch(callback);
-  }, notify: event => { notification = event; } });
-  assert.equal(credential.accountId, 'acct-1');
-  assert.equal(tokenRequest.get('code'), 'code-1');
-  assert.equal(tokenRequest.get('client_id'), 'mars-test');
-  assert.equal(tokenRequest.get('grant_type'), 'authorization_code');
-  assert.equal(notification.type, 'auth-url');
+test('OpenAI Codex login delegates credentials to the official runtime', async () => {
+  const calls = [];
+  const provider = new OpenAICodexAuthProvider({ run: async (args, _signal, inherit) => {
+    calls.push({ args, inherit });
+    return { code: 0, output: 'Logged in using ChatGPT' };
+  } });
+  const credential = await provider.login('oauth-device', { signal: signal(), openUrl: async () => {} });
+  assert.deepEqual(credential, { provider: 'openai-codex', kind: 'external', source: 'codex-cli' });
+  assert.deepEqual(calls, [{ args: ['login', 'status'], inherit: false }]);
 });
 
 test('Anthropic browser login includes OAuth state in the JSON token exchange', async t => {
@@ -143,27 +118,23 @@ test('subscription transports keep provider credentials out of model input and p
   assert.equal(anthropicBody.messages[0].content, 'hello');
   assert.ok(!JSON.stringify(anthropicBody).includes('sk-ant-oat-test'));
 
-  const payload = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct' } })).toString('base64url');
-  const codex = new OpenAICodexProvider({ provider: 'openai-codex', kind: 'oauth', accessToken: `x.${payload}.y`, accountId: 'acct' }, { fetch: async (_url, options) => {
-    const body = JSON.parse(options.body);
-    const headers = new Headers(options.headers);
-    assert.equal(headers.get('chatgpt-account-id'), 'acct');
-    assert.equal(headers.get('originator'), 'codex_cli_rs');
-    assert.ok(headers.get('session-id'));
-    assert.equal(headers.get('x-client-request-id'), headers.get('session-id'));
-    assert.equal(headers.get('openai-beta'), 'responses=experimental');
-    assert.equal(body.store, false);
-    assert.deepEqual(body.include, ['reasoning.encrypted_content']);
-    assert.equal(body.text.verbosity, 'low');
-    assert.equal(body.tools[0].strict, false);
-    return sse([
-      { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '' } },
-      { type: 'response.function_call_arguments.delta', output_index: 0, delta: '{"path":"package.json"}' },
-      { type: 'response.function_call_arguments.done', output_index: 0, arguments: '{"path":"package.json"}' },
-      { type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 123, output_tokens: 7 } } },
-    ]);
+  let threadOptions;
+  let prompt;
+  const codex = new OpenAICodexProvider({ provider: 'openai-codex', kind: 'external', source: 'codex-cli' }, { codex: {
+    startThread(options) {
+      threadOptions = options;
+      return { async run(input, options) {
+        prompt = input;
+        assert.equal(options.outputSchema.type, 'object');
+        return { finalResponse: JSON.stringify({ content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }] }), usage: { input_tokens: 123, output_tokens: 7 } };
+      } };
+    },
   } });
   const codexEvents = await collect(codex);
+  assert.equal(threadOptions.sandboxMode, 'read-only');
+  assert.equal(threadOptions.networkAccessEnabled, false);
+  assert.match(prompt, /read_file/);
+  assert.ok(!prompt.includes('accessToken'));
   assert.deepEqual(codexEvents.at(-1).usage, { inputTokens: 123, outputTokens: 7 });
   assert.deepEqual(codexEvents.at(-1).message.toolCalls, [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }]);
 });
