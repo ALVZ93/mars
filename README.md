@@ -45,29 +45,29 @@ El comando es el mismo en los tres sistemas.
 ### Windows — PowerShell
 
 ```powershell
-npm install --global @alvz/mars
+npm install --global @alvz93/mars
 mars --version
 ```
 
 ### macOS — Terminal
 
 ```sh
-npm install --global @alvz/mars
+npm install --global @alvz93/mars
 mars --version
 ```
 
 ### Linux — bash o zsh
 
 ```sh
-npm install --global @alvz/mars
+npm install --global @alvz93/mars
 mars --version
 ```
 
 Para probar MARS sin instalarlo globalmente:
 
 ```sh
-npx @alvz/mars@latest --version
-npx @alvz/mars@latest "Responde con: MARS funciona" --model fake:scripted --no-save
+npx @alvz93/mars@latest --version
+npx @alvz93/mars@latest "Responde con: MARS funciona" --model fake:scripted --no-save
 ```
 
 Si macOS o Linux devuelve `EACCES` durante la instalación global, usa un gestor de versiones de Node o ejecuta MARS mediante `npx`; no hace falta instalarlo con `sudo`. Consulta la [guía oficial de permisos de npm](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/).
@@ -75,8 +75,8 @@ Si macOS o Linux devuelve `EACCES` durante la instalación global, usa un gestor
 Para actualizar o desinstalar:
 
 ```sh
-npm install --global @alvz/mars@latest
-npm uninstall --global @alvz/mars
+npm install --global @alvz93/mars@latest
+npm uninstall --global @alvz93/mars
 ```
 
 ## Prueba sin cuenta ni API key

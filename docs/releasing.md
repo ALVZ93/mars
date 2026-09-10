@@ -4,7 +4,7 @@ Las releases públicas se publican desde `.github/workflows/release.yml` mediant
 
 ## Primera publicación
 
-npm solo permite configurar un trusted publisher cuando el paquete ya existe. La primera publicación de `@alvz/mars` debe crear el paquete desde un equipo autenticado:
+npm solo permite configurar un trusted publisher cuando el paquete ya existe. La primera publicación de `@alvz93/mars` debe crear el paquete desde un equipo autenticado:
 
 ```powershell
 npm login
@@ -14,11 +14,11 @@ pnpm test:package
 npm publish --access public
 ```
 
-La cuenta de npm debe controlar el scope `@alvz` y tener 2FA activado. No crees todavía una GitHub Release: dispararía el workflow antes de que Trusted Publishing esté configurado.
+La cuenta de npm debe controlar el scope `@alvz93` y tener 2FA activado. No crees todavía una GitHub Release: dispararía el workflow antes de que Trusted Publishing esté configurado.
 
 ## Configurar Trusted Publishing
 
-En la configuración del paquete `@alvz/mars` en npm, añade un publisher de GitHub Actions con estos valores:
+En la configuración del paquete `@alvz93/mars` en npm, añade un publisher de GitHub Actions con estos valores:
 
 | Campo | Valor |
 | --- | --- |
@@ -39,8 +39,8 @@ El repositorio ya contiene el environment `npm` y el workflow solicita `id-token
 6. Comprueba el workflow y la instalación pública:
 
 ```powershell
-npm view @alvz/mars version
-npx @alvz/mars@X.Y.Z --version
+npm view @alvz93/mars version
+npx @alvz93/mars@X.Y.Z --version
 ```
 
 Un tag incorrecto falla antes de publicar. Una versión que ya exista en npm también falla y debe resolverse creando una versión nueva; las versiones publicadas no se reutilizan.

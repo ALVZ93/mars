@@ -70,7 +70,7 @@ Compaction es una mejora de uso diario propuesta; el handoff la aplaza más all�
 - [x] Preparar build previo a empaquetar, declarar types/exports y comprobar el contenido del tarball.
 - [x] Probar instalación local/global, npx y pnpm dlx desde el artefacto, en los tres sistemas.
 - [x] Verificar binario ejecutable, exports SDK y dependencia nativa con Node 24 desde el tarball.
-- [ ] Crear `@alvz/mars` con la primera publicación autenticada y configurar npm Trusted Publishing según `docs/releasing.md`.
+- [ ] Crear `@alvz93/mars` con la primera publicación autenticada y configurar npm Trusted Publishing según `docs/releasing.md`.
 - [x] Ejecutar CI remota en Windows, macOS y Linux.
 - [ ] Ejecutar smoke tests reales de instalación y proveedores separados de los tests offline.
 - [x] Actualizar README para que los límites y la política de autenticación coincidan con el código.

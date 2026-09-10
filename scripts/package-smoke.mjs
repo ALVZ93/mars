@@ -15,7 +15,7 @@ const root = await mkdtemp(path.join(tmpdir(), 'mars-package-smoke-'));
 const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 const expectedVersion = packageJson.version;
 const readme = await readFile(path.join(projectRoot, 'README.md'), 'utf8');
-assert.match(readme, /npm install --global @alvz\/mars/);
+assert.match(readme, /npm install --global @alvz93\/mars/);
 assert.match(readme, /Windows[\s\S]*macOS[\s\S]*Linux/);
 assert.match(readme, /mars login openai --api-key/);
 assert.match(readme, /███    ███  █████/);
@@ -48,7 +48,7 @@ try {
   assert.equal((await run(npx, ['--no-install', 'mars', '--version'], consumer)).stdout.trim(), expectedVersion);
 
   const sdkSmoke = path.join(consumer, 'sdk-smoke.mjs');
-  await writeFile(sdkSmoke, "import { createForge, FakeProvider, keychainAvailable } from '@alvz/mars';\nif (typeof createForge !== 'function' || typeof FakeProvider !== 'function' || !keychainAvailable()) process.exit(1);\n");
+  await writeFile(sdkSmoke, "import { createForge, FakeProvider, keychainAvailable } from '@alvz93/mars';\nif (typeof createForge !== 'function' || typeof FakeProvider !== 'function' || !keychainAvailable()) process.exit(1);\n");
   await run(process.execPath, [sdkSmoke], consumer);
 
   const globalRoot = path.join(root, 'global');
