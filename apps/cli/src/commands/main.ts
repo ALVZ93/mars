@@ -62,7 +62,7 @@ export async function main(): Promise<void> {
     if (resolved.route && task) process.stderr.write(`[route] ${resolved.route.role} → ${resolved.route.target} (${resolved.route.reason})\n`);
     if (command === 'route') { process.stdout.write(`${JSON.stringify(resolved.route ?? routeTask(task ?? '', { explicit: target }), null, 2)}\n`); return; }
   }
-  if (command === 'resume' || !task) { await interactive(root, values as Record<string, unknown>, credentials, target); return; }
+  if (command === 'resume' || !task) { await interactive(root, values as Record<string, unknown>, credentials, target, resumeId); return; }
   await runTask(target, root, values as Record<string, unknown>, credentials, task, resumeId);
 }
 

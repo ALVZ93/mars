@@ -7,4 +7,5 @@ dist/
 .env.*
 *.tgz
 .mars/
+.dogfood/
 hello.txt

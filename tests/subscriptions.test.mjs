@@ -126,17 +126,63 @@ test('subscription transports keep provider credentials out of model input and p
       return { async run(input, options) {
         prompt = input;
         assert.equal(options.outputSchema.type, 'object');
-        return { finalResponse: JSON.stringify({ content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }] }), usage: { input_tokens: 123, output_tokens: 7 } };
+        assert.equal(options.outputSchema.properties.toolCalls.items.properties.arguments.type, 'string');
+        return { finalResponse: JSON.stringify({ content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"package.json"}' }] }), usage: { input_tokens: 123, output_tokens: 7 } };
       } };
     },
   } });
   const codexEvents = await collect(codex);
   assert.equal(threadOptions.sandboxMode, 'read-only');
+  assert.equal(threadOptions.modelReasoningEffort, 'low');
   assert.equal(threadOptions.networkAccessEnabled, false);
   assert.match(prompt, /read_file/);
   assert.ok(!prompt.includes('accessToken'));
   assert.deepEqual(codexEvents.at(-1).usage, { inputTokens: 123, outputTokens: 7 });
   assert.deepEqual(codexEvents.at(-1).message.toolCalls, [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }]);
+});
+
+test('Codex transport rejects malformed JSON tool arguments', async () => {
+  const codex = new OpenAICodexProvider({ provider: 'openai-codex', kind: 'external', source: 'codex-cli' }, { codex: {
+    startThread() {
+      return { async run() {
+        return { finalResponse: JSON.stringify({ content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{' }] }), usage: null };
+      } };
+    },
+  } });
+  await assert.rejects(() => collect(codex), error => error?.code === 'InvalidToolCallError');
+});
+
+test('Codex transport reuses its thread and sends only new non-assistant transcript entries', async () => {
+  const prompts = [];
+  let starts = 0;
+  let runs = 0;
+  const codex = new OpenAICodexProvider({ provider: 'openai-codex', kind: 'external', source: 'codex-cli' }, { codex: {
+    startThread() {
+      starts++;
+      return { async run(prompt) {
+        prompts.push(prompt);
+        runs++;
+        return runs === 1
+          ? { finalResponse: JSON.stringify({ content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"package.json"}' }] }), usage: null }
+          : { finalResponse: JSON.stringify({ content: 'done', toolCalls: [] }), usage: null };
+      } };
+    },
+  } });
+  const tools = [{ name: 'read_file', description: 'Read', parameters: { type: 'object', properties: {}, additionalProperties: false } }];
+  const firstMessages = [{ role: 'user', content: 'inspect' }];
+  await Array.fromAsync(codex.stream({ model: 'test-model', messages: firstMessages, tools }, signal()));
+  const secondMessages = [
+    ...firstMessages,
+    { role: 'assistant', content: '', toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }] },
+    { role: 'tool', callId: 'c1', content: '{"name":"mars"}' },
+  ];
+  await Array.fromAsync(codex.stream({ model: 'test-model', messages: secondMessages, tools }, signal()));
+  assert.equal(starts, 1);
+  assert.match(prompts[0], /MARS tools/);
+  assert.match(prompts[1], /New MARS transcript entries/);
+  assert.match(prompts[1], /\"role\":\"tool\"/);
+  assert.doesNotMatch(prompts[1], /\"role\":\"assistant\"/);
+  assert.doesNotMatch(prompts[1], /MARS tools:\n/);
 });
 
 test('Kimi Code transport uses its Anthropic-compatible endpoint', async () => {

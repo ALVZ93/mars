@@ -11,11 +11,12 @@ import {
   FileEventLog, FileEvidenceStore, FileSessionStore, ProviderHealthTracker, Workspace, Permissions, ToolRegistry, workspaceTools, runProjectChecks,
   McpStdioClient,
   readEventLog, readEventLogEntries,
-  loadConfig, saveConfig, routeTask, classifyTask, SkillRegistry, selectWorkflow, ModelRegistry,
+  loadConfig, saveConfig, routeTask, classifyTask, SkillRegistry, selectWorkflow, ModelRegistry, MemoryCredentialStore,
   OpenRouterProvider, OllamaProvider,
 } from '../dist/packages/sdk/src/internal.js';
 import { FakeProvider } from '../dist/packages/providers/src/fake.js';
 import { createMars } from '../dist/packages/sdk/src/internal.js';
+import { createInteractiveSession } from '../dist/apps/cli/src/interactive/repl.js';
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
@@ -58,6 +59,29 @@ test('sessions survive process boundaries and resume from tool observations', as
   assert.equal((await sessions.list(root))[0].messageCount, resumed.session.messages.length);
 });
 
+test('CLI interactive resume attaches the requested persisted session', async t => {
+  const root = await tempRoot(t, 'mars-cli-resume-');
+  await writeFile(path.join(root, 'package.json'), '{"name":"resume-fixture"}');
+  const sessions = new FileSessionStore(path.join(root, '.mars', 'sessions'));
+  const first = await createMars({
+    workspace: root,
+    provider: new FakeProvider([{ role: 'assistant', content: 'saved result', toolCalls: [] }]),
+    model: 'scripted',
+    sessionStore: sessions,
+    includeProjectContext: false,
+  });
+  await first.run('saved task');
+  await first.close();
+
+  const resumed = await createInteractiveSession(root, {}, new MemoryCredentialStore(), 'fake:scripted', first.id);
+  try {
+    assert.equal(resumed.mars.id, first.id);
+    assert.ok(resumed.mars.session.messages.some(message => message.role === 'user' && message.content === 'saved task'));
+  } finally {
+    await resumed.mars.close();
+  }
+});
+
 test('search_files finds source lines and git exposes read-only repository state', async t => {
   const root = await tempRoot(t);
   await mkdir(path.join(root, 'src'));
@@ -84,6 +108,18 @@ test('routing and workflow selection are deterministic and do not call a model',
   assert.equal(classifyTask('review this diff'), 'reviewer');
   assert.equal(classifyTask('run tests and verify'), 'verifier');
   assert.equal(selectWorkflow('the tests are failing').id, 'bugfix');
+  const bugfix = selectWorkflow('the tests are failing');
+  assert.match(bugfix.phases[0].instruction, /Read-only phase/);
+  assert.match(bugfix.phases[1].instruction, /without repeating broad inspection/);
+  assert.match(bugfix.phases[2].instruction, /do not modify files or run shell commands/);
+  assert.match(bugfix.phases[2].instruction, /MARS executes the configured verification commands/);
+  const review = selectWorkflow('review this diff');
+  assert.match(review.phases[0].instruction, /read_file and git tools/);
+  assert.match(review.phases[0].instruction, /Do not modify files, run shell commands or use the network/);
+  assert.match(review.phases[1].instruction, /Verification review only/);
+  assert.match(review.phases[1].instruction, /MARS executes them/);
+  const feature = selectWorkflow('add this feature');
+  assert.match(feature.phases.at(-1).instruction, /Verification review only/);
   const decision = routeTask('review this diff', { authenticatedProviders: ['openai-codex'] });
   assert.equal(decision.role, 'reviewer');
   assert.equal(decision.target, 'openai-codex:gpt-5.6-sol');

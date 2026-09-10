@@ -84,9 +84,10 @@ export class FileSessionStore implements SessionStore {
       try {
         await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
         await rename(temporary, file);
-      } catch {
+      } catch (error) {
         await unlink(temporary).catch(() => {});
-        throw new MarsError('ConfigurationError', 'Could not write MARS session.');
+        const code = (error as NodeJS.ErrnoException).code;
+        throw new MarsError('ConfigurationError', `Could not write MARS session${code ? ` (${code})` : ''}.`);
       }
     });
   }

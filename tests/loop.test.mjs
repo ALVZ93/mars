@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runAgent, MarsError } from '../dist/packages/core/src/index.js';
+import { compactHistory, runAgent, MarsError } from '../dist/packages/core/src/index.js';
 import { FakeProvider } from '../dist/packages/providers/src/fake.js';
 
 const final = { role: 'assistant', content: 'Done', toolCalls: [] };
 const call = (id = 'c1') => ({ role: 'assistant', content: '', toolCalls: [{ id, name: 'read_file', arguments: { path: 'package.json' } }] });
 const executor = { schemas: () => [], execute: async () => ({ content: 'contents' }) };
 const run = (steps, extra = {}) => runAgent({ provider: new FakeProvider(steps), model: 'scripted', messages: [{ role: 'user', content: 'Task' }], tools: executor, ...extra });
+
+test('compaction drops old tool cycles within the current task without orphaning results', () => {
+  const messages = [
+    { role: 'system', content: 'instructions' },
+    { role: 'user', content: 'current task' },
+    call('old'),
+    { role: 'tool', callId: 'old', content: 'x'.repeat(900) },
+    call('recent'),
+    { role: 'tool', callId: 'recent', content: 'y'.repeat(900) },
+  ];
+  const compacted = compactHistory(messages, 1_500);
+  assert.ok(compacted.some(message => message.role === 'system' && /context compaction/.test(message.content)));
+  assert.ok(compacted.some(message => message.role === 'user' && message.content === 'current task'));
+  assert.ok(!compacted.some(message => message.role === 'tool' && message.callId === 'old'));
+  assert.ok(compacted.some(message => message.role === 'assistant' && message.toolCalls.some(toolCall => toolCall.id === 'recent')));
+  assert.ok(compacted.some(message => message.role === 'tool' && message.callId === 'recent'));
+});
 
 test('final response and streaming events', async () => {
   const events = [];
@@ -70,6 +87,26 @@ test('transient provider retries are opt-in and bounded before any tool executes
   assert.deepEqual(result.at(-1), final);
   assert.equal(attempts, 2);
   assert.deepEqual(events.filter(event => event.type === 'model:retry').map(event => event.attempt), [1]);
+  attempts = 0;
+  const malformed = {
+    id: 'malformed',
+    async *stream() {
+      attempts++;
+      if (attempts === 1) throw new MarsError('InvalidToolCallError', 'malformed arguments');
+      yield { type: 'done', message: final };
+    },
+  };
+  assert.deepEqual((await run([], { provider: malformed, maxRetries: 1, retryDelayMs: 1 })).at(-1), final);
+  attempts = 0;
+  const emptyThenFinal = {
+    id: 'empty-then-final',
+    async *stream() {
+      attempts++;
+      yield { type: 'done', message: attempts === 1 ? { role: 'assistant', content: '', toolCalls: [] } : final };
+    },
+  };
+  assert.deepEqual((await run([], { provider: emptyThenFinal, maxRetries: 1, retryDelayMs: 1 })).at(-1), final);
+  assert.equal(attempts, 2);
   attempts = 0;
   const invalidRequest = { id: 'invalid', async *stream() { attempts++; throw new MarsError('ProviderUnavailableError', 'HTTP 400: model not found'); } };
   await assert.rejects(run([], { provider: invalidRequest, maxRetries: 3, retryDelayMs: 1 }), { code: 'ProviderUnavailableError' });

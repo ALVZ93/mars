@@ -7,12 +7,16 @@ import { loginCommand } from '../commands/auth.js';
 import { configCommand, evidenceCommand, healthCommand, renderCheckReport, selectModel, sessionsCommand, skillsCommand, workflowsCommand } from '../commands/index.js';
 import { createSessionMars } from '../session.js';
 import { help, prompt, safe, targetParts } from '../utils/common.js';
-export async function interactive(root: string, values: Record<string, unknown>, credentials: CredentialStore, target: string): Promise<void> {
+export async function createInteractiveSession(root: string, values: Record<string, unknown>, credentials: CredentialStore, target: string, sessionId?: string, screen?: ConversationScreen) {
+  return createSessionMars(target, root, values, credentials, sessionId, screen);
+}
+
+export async function interactive(root: string, values: Record<string, unknown>, credentials: CredentialStore, target: string, sessionId?: string): Promise<void> {
   let currentTarget = target;
   const loaded = await loadConfig(root);
   const screen = new ConversationScreen(currentTarget, root, loaded.config.limits.maxContextChars);
   screen.start();
-  let activeMars = await createSessionMars(currentTarget, root, values, credentials, undefined, screen);
+  let activeMars = await createInteractiveSession(root, values, credentials, currentTarget, sessionId, screen);
   const sessionStore = activeMars.sessionStore ?? new FileSessionStore(path.join(root, '.mars', 'sessions'));
   const outside = async <T>(work: () => Promise<T>): Promise<T> => {
     screen.suspend();

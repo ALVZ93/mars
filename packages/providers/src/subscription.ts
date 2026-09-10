@@ -247,7 +247,7 @@ const codexOutputSchema = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { id: { type: 'string' }, name: { type: 'string' }, arguments: {} },
+        properties: { id: { type: 'string' }, name: { type: 'string' }, arguments: { type: 'string' } },
         required: ['id', 'name', 'arguments'],
         additionalProperties: false,
       },
@@ -257,12 +257,18 @@ const codexOutputSchema = {
   additionalProperties: false,
 } as const;
 
-function codexPrompt(request: ModelRequest): string {
+function codexPrompt(request: ModelRequest, continuedMessages?: ModelRequest['messages']): string {
+  if (continuedMessages) return [
+    'Continue acting only as the language-model component inside the MARS agent harness.',
+    'Return the next assistant message as the required JSON object. Use only the previously supplied MARS tools.',
+    'Encode tool arguments as a JSON string. Do not use built-in Codex tools.',
+    `New MARS transcript entries:\n${JSON.stringify(continuedMessages)}`,
+  ].join('\n\n');
   return [
     'Act only as the language-model component inside the MARS agent harness.',
     'Do not inspect files, run commands, browse, edit, or use any built-in Codex tool.',
     'Return the next assistant message as the required JSON object. Use only the supplied MARS tools.',
-    'When a tool is needed, return its call and wait for the next transcript. Otherwise return the final answer with an empty toolCalls array.',
+    'When a tool is needed, encode its arguments object as a JSON string, return the call, and wait for the next transcript. Otherwise return the final answer with an empty toolCalls array.',
     `MARS tools:\n${JSON.stringify(request.tools)}`,
     `Conversation transcript:\n${JSON.stringify(request.messages)}`,
   ].join('\n\n');
@@ -271,6 +277,8 @@ function codexPrompt(request: ModelRequest): string {
 export class OpenAICodexProvider implements ModelProvider {
   readonly id = 'openai-codex';
   readonly #codex: CodexLike;
+  #thread?: CodexThreadLike;
+  #sentMessageCount = 0;
   constructor(credential: Credential, options: CodexProviderOptions = {}) {
     if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new MarsError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
     this.#codex = options.codex ?? new Codex();
@@ -279,17 +287,27 @@ export class OpenAICodexProvider implements ModelProvider {
     checkAbort(signal);
     let result: Awaited<ReturnType<CodexThreadLike['run']>>;
     try {
-      result = await this.#codex.startThread({
-        model: request.model,
-        sandboxMode: 'read-only',
-        workingDirectory: process.cwd(),
-        skipGitRepoCheck: true,
-        approvalPolicy: 'never',
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled',
-        threadSource: 'mars',
-      }).run(codexPrompt(request), { outputSchema: codexOutputSchema, signal });
+      const continuing = this.#thread !== undefined && this.#sentMessageCount <= request.messages.length;
+      const thread = continuing ? this.#thread! : this.#codex.startThread({
+          model: request.model,
+          modelReasoningEffort: 'low',
+          sandboxMode: 'read-only',
+          workingDirectory: process.cwd(),
+          skipGitRepoCheck: true,
+          approvalPolicy: 'never',
+          networkAccessEnabled: false,
+          webSearchMode: 'disabled',
+          threadSource: 'mars',
+        });
+      const updates = continuing
+        ? request.messages.slice(this.#sentMessageCount).filter(message => message.role !== 'assistant')
+        : undefined;
+      result = await thread.run(codexPrompt(request, updates), { outputSchema: codexOutputSchema, signal });
+      this.#thread = thread;
+      this.#sentMessageCount = request.messages.length;
     } catch (error) {
+      this.#thread = undefined;
+      this.#sentMessageCount = 0;
       checkAbort(signal);
       const message = diagnostic(error instanceof Error ? error.message : String(error));
       if (/login|auth|credential|401|unauthorized/i.test(message ?? '')) throw new MarsError('AuthenticationError', 'Codex requires a ChatGPT login. Run `mars login openai-codex`.');
@@ -304,8 +322,12 @@ export class OpenAICodexProvider implements ModelProvider {
     const toolCalls: ToolCall[] = value.toolCalls.map(call => {
       if (!call || typeof call !== 'object' || Array.isArray(call)) throw new MarsError('InvalidToolCallError', 'Codex returned an invalid tool call.');
       const item = call as { id?: unknown; name?: unknown; arguments?: unknown };
-      if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name) throw new MarsError('InvalidToolCallError', 'Codex returned an invalid tool call.');
-      return { id: item.id, name: item.name, arguments: item.arguments };
+      if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name || typeof item.arguments !== 'string') throw new MarsError('InvalidToolCallError', 'Codex returned an invalid tool call.');
+      let args: unknown;
+      try { args = JSON.parse(item.arguments); }
+      catch { throw new MarsError('InvalidToolCallError', 'Codex returned malformed tool arguments.'); }
+      if (!args || typeof args !== 'object' || Array.isArray(args)) throw new MarsError('InvalidToolCallError', 'Codex returned invalid tool arguments.');
+      return { id: item.id, name: item.name, arguments: args };
     });
     if (value.content) yield { type: 'text', text: value.content };
     const usage = result.usage ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } : undefined;

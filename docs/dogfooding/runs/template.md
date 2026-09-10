@@ -1,0 +1,22 @@
+# RUN_ID — title
+
+- Task:
+- Repository:
+- Revision:
+- Provider/model:
+- Workflow:
+- Role:
+- Started:
+- Duration:
+- Turns:
+- Tool calls:
+- Tool errors:
+- Permission prompts:
+- Input/output tokens:
+- Estimated cost:
+- Retries:
+- Context compactions:
+- Verification:
+- Outcome:
+- Accepted:
+- Issues:

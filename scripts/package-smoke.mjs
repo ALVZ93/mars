@@ -59,5 +59,8 @@ try {
 
   console.log(`Package smoke passed on ${process.platform}/${process.arch}.`);
 } finally {
-  await rm(root, { recursive: true, force: true });
+  // Windows can keep a package file handle alive briefly after npm/npx exits.
+  // Retry the cleanup so a successful smoke run is not reported as failed by
+  // an antivirus or filesystem handle that is already on its way out.
+  await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 500 });
 }

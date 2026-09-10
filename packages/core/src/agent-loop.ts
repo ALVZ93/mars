@@ -25,6 +25,7 @@ export interface RunOptions {
 function retryable(error: unknown): error is MarsError {
   if (!(error instanceof MarsError)) return false;
   if (error.code === 'RateLimitError') return true;
+  if (error.code === 'InvalidToolCallError') return true;
   return error.code === 'ProviderUnavailableError' && !/\bHTTP\s+(?:400|401|403|404|422)\b/i.test(error.message);
 }
 
@@ -84,10 +85,12 @@ export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
           }
           checkAbort(signal);
           if (!response) throw new MarsError('ProviderUnavailableError', 'Model stream ended without a final message.');
+          if (!response.toolCalls.length && !response.content.trim()) throw new MarsError('ProviderUnavailableError', 'Model returned an empty final response.');
         } catch (error) {
           const canRetry = retryable(error) && attempt < maxRetries && streamedChars === 0 && !signal.aborted;
           if (canRetry) {
             attempt++;
+            response = undefined;
             const delayMs = Math.min(retryDelayMs * (2 ** (attempt - 1)), 30_000);
             emit({ type: 'model:retry', turn, provider: provider.id, attempt, delayMs, error: error.code });
             try { await waitForRetry(delayMs, signal); }
