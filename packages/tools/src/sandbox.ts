@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { MarsError, checkAbort } from '../../core/src/index.js';
 import { executeShell } from './index.js';
 
@@ -42,6 +43,7 @@ export function createSandboxShell(workspaceRoot: string, options: SandboxOption
   if (mode === 'host') return executeShell;
   if (mode !== 'docker') throw new MarsError('ConfigurationError', 'Sandbox mode must be host or docker.');
   const image = options.image?.trim() || DEFAULT_IMAGE;
+  if (image.startsWith('-') || /[\s\0]/.test(image)) throw new MarsError('ConfigurationError', 'Sandbox image must be a Docker image reference.');
   const network = options.network ?? 'none';
   if (network !== 'none' && network !== 'host') throw new MarsError('ConfigurationError', 'Sandbox network must be none or host.');
   const memoryMb = options.memoryMb ?? 2048;
@@ -54,10 +56,12 @@ export function createSandboxShell(workspaceRoot: string, options: SandboxOption
 async function executeDockerShell(workspaceRoot: string, command: string, cwd: string, timeout: number, parent: AbortSignal, options: { image: string; network: 'none' | 'host'; memoryMb: number; cpus: number }): Promise<ShellExecution> {
   checkAbort(parent);
   const relative = path.relative(workspaceRoot, cwd);
-  if (path.isAbsolute(relative) || relative.startsWith(`..${path.sep}`)) throw new MarsError('WorkspaceViolationError', 'Sandbox cwd must be inside the workspace.');
+  if (path.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.sep}`)) throw new MarsError('WorkspaceViolationError', 'Sandbox cwd must be inside the workspace.');
+  if (workspaceRoot.includes(',')) throw new MarsError('ConfigurationError', 'Docker mount paths containing commas are not supported.');
   const containerCwd = `/workspace${relative ? `/${relative.split(path.sep).join('/')}` : ''}`;
+  const containerName = `mars-${randomUUID()}`;
   const args = [
-    'run', '--rm', '--init', '--network', options.network,
+    'run', '--rm', '--init', '--name', containerName, '--network', options.network,
     '--memory', `${options.memoryMb}m`, '--cpus', String(options.cpus),
     '--mount', `type=bind,src=${workspaceRoot},dst=/workspace`,
     '--workdir', containerCwd, options.image, '/bin/sh', '-lc', command,
@@ -74,15 +78,23 @@ async function executeDockerShell(workspaceRoot: string, command: string, cwd: s
     };
     child.stdout.setEncoding('utf8').on('data', collect);
     child.stderr.setEncoding('utf8').on('data', collect);
+    const removeContainer = () => new Promise<void>(done => {
+      const cleanup = spawn('docker', ['rm', '--force', containerName], { windowsHide: true, stdio: 'ignore', timeout: 5_000 });
+      cleanup.once('error', () => done());
+      cleanup.once('close', () => done());
+    });
     const stop = () => { if (child.pid) child.kill(); };
     signal.addEventListener('abort', stop, { once: true });
+    if (signal.aborted) stop();
     child.on('error', error => {
       signal.removeEventListener('abort', stop);
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') reject(new MarsError('ConfigurationError', 'Docker is not installed or is not on PATH.'));
       else reject(new MarsError('ToolExecutionError', 'Unable to start Docker sandbox.'));
     });
-    child.on('close', code => {
+    child.on('close', async code => {
       signal.removeEventListener('abort', stop);
+      // Killing `docker run` only terminates the client; remove its named container as well.
+      if (signal.aborted) await removeContainer();
       try { checkAbort(signal); } catch (error) { reject(error); return; }
       resolve({ exitCode: code, output, truncated });
     });

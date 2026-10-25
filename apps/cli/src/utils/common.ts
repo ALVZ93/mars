@@ -19,6 +19,11 @@ mars doctor                           Diagnose local configuration
   mars init                             Create .mars/config.json
   mars config [show|path|set KEY VALUE] Read or update configuration
 mars skills                           List project and user skills
+mars memory                           List reviewed notes and pending proposals
+mars memory add NAME CONTENT          Propose a project note for review
+mars memory show|approve|reject|forget ID  Review or remove a memory entry
+mars skills pending|show|approve|reject|forget [ID]  Review procedure drafts
+mars learn SESSION_ID                 Capture a local procedure draft from verified work (no model calls)
 mars evidence                         Show local skill/workflow evidence
 mars health                           Show last-known provider health
 mars logout PROVIDER                   Disconnect a provider
@@ -48,14 +53,16 @@ Options:
   --sandbox     Shell mode: host (default) or docker
   --route       Enable deterministic role-based model routing
   --workflow    Run a workflow (bugfix, feature or review)
+  --repair-attempts Repair failing workflow checks (0 to 3; default: 0)
+  --report      Export run/check reports as JSON to a new workspace file
   --verify      Run standard project checks after the agent finishes
   --json        Print machine-readable output where supported
-  --no-save     Do not persist the session
+  --no-save     Do not persist the session or enable project knowledge integration
   --no-animation Skip the MARS startup animation
   --help        Show help
   --version     Show version
 
-Interactive commands: /help, /login, /new, /model [provider:model], /models, /permissions, /route, /sessions, /resume ID, /config, /check, /skills, /evidence, /health, /workflows, /exit
+Interactive commands: /help, /login, /new, /model [provider:model], /models, /permissions, /route, /sessions, /resume ID, /config, /check, /memory, /remember NAME CONTENT, /learn [SESSION_ID], /skills, /evidence, /health, /workflows, /exit
 Shell defaults to host access; use --sandbox docker for containerized execution.
 `;
 

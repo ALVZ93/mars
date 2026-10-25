@@ -34,7 +34,10 @@ export class GoogleGeminiAuthProvider implements AuthProvider {
     const refreshed = await this.#getProvider().refresh(credential, context);
     return credential.metadata ? { ...refreshed, metadata: credential.metadata } : refreshed;
   }
-  async logout(credential: Credential, context: AuthContext): Promise<void> { return this.#getProvider().logout(credential, context); }
+  async logout(credential: Credential, context: AuthContext): Promise<void> {
+    if (credential.kind !== 'oauth') return;
+    return this.#getProvider().logout(credential, context);
+  }
   async status(credential: Credential | undefined, context: AuthContext): Promise<AuthStatus> {
     if (!credential) return { authenticated: false, message: process.env.MARS_GEMINI_CLIENT_ID ? 'Not connected.' : 'Set MARS_GEMINI_CLIENT_ID for browser login.' };
     if (credential.kind === 'api-key') return { authenticated: true, method: 'api-key' };

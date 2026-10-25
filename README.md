@@ -13,7 +13,11 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-303030.svg)](https://nodejs.org/en/download)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-EF4137.svg)](#instalación)
 
-MARS es un arnés de agentes local para trabajar sobre repositorios desde la terminal. Conecta el modelo que elijas, mantiene sesiones por proyecto y ofrece herramientas de lectura, escritura, búsqueda, Git, shell, verificación, skills, workflows y servidores MCP.
+MARS es un harness local para trabajar con IA sobre repositorios y carpetas de trabajo desde la terminal. Conecta el modelo que elijas, mantiene sesiones y memoria revisada por proyecto y ofrece herramientas de lectura, escritura, búsqueda, Git, shell, verificación, skills, workflows y servidores MCP.
+
+La [dirección de producto y guía de memoria](docs/direccion-producto.md) explica cómo proponer notas, aprobar procedimientos y reutilizar trabajo verificado. `mars learn SESSION_ID` captura un borrador local sin llamadas al modelo; `mars memory` y `mars skills pending` permiten revisarlo antes de activarlo.
+
+Consulta [qué aporta el harness frente a usar un modelo directamente](docs/ventajas-del-harness.md): ventajas comprobables, límites y mejoras pendientes. Los workflows `bugfix` y `feature` admiten reparación opt-in de checks fallidos (`--repair-attempts 1`); `--report reports/tarea-001.json` exporta los resultados de una tarea, incluso si falla.
 
 - Funciona en Windows, macOS y Linux.
 - Las credenciales se guardan en Credential Manager, Keychain o Secret Service.

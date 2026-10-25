@@ -1,6 +1,8 @@
 import type { AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
 import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
+import { randomUUID } from 'node:crypto';
+import { jsonSse } from './sse.js';
 
 type FetchLike = typeof fetch;
 type Json = Record<string, unknown>;
@@ -14,7 +16,7 @@ function safeRoot(value: string): string {
 }
 function asObject(value: unknown): Json | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Json : undefined; }
 function asString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
-function contents(messages: AgentMessage[]): { system?: { parts: Array<{ text: string }> }; contents: unknown[] } {
+function contents(messages: AgentMessage[]): { systemInstruction?: { parts: Array<{ text: string }> }; contents: unknown[] } {
   const system = messages.filter(message => message.role === 'system').map(message => message.content).join('\n').trim();
   const names = new Map<string, string>();
   for (const message of messages) if (message.role === 'assistant') for (const call of message.toolCalls) names.set(call.id, call.name);
@@ -29,41 +31,9 @@ function contents(messages: AgentMessage[]): { system?: { parts: Array<{ text: s
       if (parts.length) values.push({ role: 'model', parts });
     } else if (message.role === 'tool') values.push({ role: 'user', parts: [{ functionResponse: { name: names.get(message.callId) ?? message.callId, response: { content: message.error ? `${message.error}: ${message.content}` : message.content } } }] });
   }
-  return { ...(system ? { system: { parts: [{ text: system }] } } : {}), contents: values };
+  return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents: values };
 }
 function tools(request: ModelRequest): unknown[] { return [{ functionDeclarations: request.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }]; }
-async function* parseSse(response: Response, signal: AbortSignal): AsyncGenerator<Json> {
-  if (!response.body) throw new MarsError('ProviderUnavailableError', 'Gemini returned no stream body.');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const onAbort = () => { void reader.cancel().catch(() => {}); };
-  signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    while (true) {
-      checkAbort(signal);
-      const chunk = await reader.read();
-      buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
-      if (chunk.done && buffer.trim()) buffer += '\n\n';
-      let index = buffer.indexOf('\n\n');
-      while (index >= 0) {
-        const frame = buffer.slice(0, index);
-        buffer = buffer.slice(index + 2);
-        const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n').trim();
-        if (data) {
-          try { const value: unknown = JSON.parse(data); if (asObject(value)) yield value as Json; }
-          catch { throw new MarsError('ProviderUnavailableError', 'Gemini returned malformed streaming data.'); }
-        }
-        index = buffer.indexOf('\n\n');
-      }
-      if (chunk.done) break;
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
 
 export interface GeminiProviderOptions { fetch?: FetchLike; baseUrl?: string; projectId?: string }
 export class GeminiProvider implements ModelProvider {
@@ -100,13 +70,21 @@ export class GeminiProvider implements ModelProvider {
       throw new MarsError('ProviderUnavailableError', 'Gemini request failed. Check connectivity and model availability.');
     }
     let content = '';
+    let finished = false;
+    let outputSize = 0;
     const toolCalls: ToolCall[] = [];
     let usage: { inputTokens: number; outputTokens: number } | undefined;
-    for await (const event of parseSse(response, signal)) {
+    for await (const event of jsonSse(response, signal)) {
+      outputSize += JSON.stringify(event).length;
+      if (outputSize > 1_000_000) throw new MarsError('ContextLimitError', 'Provider output exceeded the limit.');
       const candidates = event.candidates;
       const counts = asObject(event.usageMetadata);
       if (counts && Number.isSafeInteger(counts.promptTokenCount) && Number.isSafeInteger(counts.candidatesTokenCount)) usage = { inputTokens: counts.promptTokenCount as number, outputTokens: counts.candidatesTokenCount as number };
       const candidate = Array.isArray(candidates) ? asObject(candidates[0]) : undefined;
+      if (candidate?.finishReason) {
+        if (candidate.finishReason !== 'STOP') throw new MarsError('ProviderUnavailableError', 'Gemini response was incomplete.');
+        finished = true;
+      }
       const responseContent = asObject(candidate?.content);
       const parts = Array.isArray(responseContent?.parts) ? responseContent.parts : [];
       for (const part of parts) {
@@ -118,10 +96,11 @@ export class GeminiProvider implements ModelProvider {
         if (call) {
           const name = asString(call.name);
           if (!name) throw new MarsError('InvalidToolCallError', 'Gemini returned a tool call without a name.');
-          toolCalls.push({ id: `${name}-${toolCalls.length + 1}`, name, arguments: call.args ?? {} });
+          toolCalls.push({ id: randomUUID(), name, arguments: call.args ?? {} });
         }
       }
     }
+    if (!finished) throw new MarsError('ProviderUnavailableError', 'Gemini stream ended prematurely.');
     yield { type: 'done', message: { role: 'assistant', content, toolCalls }, usage };
   }
 }

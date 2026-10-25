@@ -11,6 +11,7 @@ MARS combina defaults, configuración de usuario, configuración del proyecto, e
 | Sesiones | `<workspace>\\.mars\\sessions` | `<workspace>/.mars/sessions` |
 | Evidencia | `<workspace>\\.mars\\evidence.json` | `<workspace>/.mars/evidence.json` |
 | Eventos locales | `<workspace>\\.mars\\events.jsonl` | `<workspace>/.mars/events.jsonl` |
+| Memoria y procedimientos revisados | `<workspace>\\.mars\\knowledge.json` | `<workspace>/.mars/knowledge.json` |
 | Credenciales en modo `file` | `%APPDATA%\\mars\\auth.json` | `${XDG_CONFIG_HOME:-~/.config}/mars/auth.json` |
 
 Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STORE=file` habilita expresamente el archivo JSON de desarrollo. No guardes claves en `.mars/config.json`, `AGENTS.md`, skills ni configuración MCP versionada.
@@ -21,6 +22,9 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
 {
   "model": {
     "default": "openai:MODEL"
+  },
+  "knowledge": {
+    "enabled": true
   },
   "routing": {
     "enabled": true,
@@ -45,7 +49,8 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
     "retryDelayMs": 500
   },
   "verification": {
-    "commands": ["pnpm typecheck", "pnpm test"]
+    "commands": ["pnpm typecheck", "pnpm test"],
+    "maxRepairAttempts": 0
   },
   "mcp": {
     "servers": [
@@ -72,16 +77,34 @@ mars config set model.default openai:MODEL
 mars config set permissions.shell ask
 mars config set routing.enabled true
 mars config set verification.commands '["cargo test","cargo clippy"]'
+mars config set verification.maxRepairAttempts 1
+mars config set knowledge.enabled false
 mars config set mcp.servers '[{"name":"local","command":"node","args":["./mcp-server.mjs"]}]'
 ```
 
 `mars config set` escribe la configuración del proyecto de forma atómica.
 
+## Reparación e informes
+
+`verification.maxRepairAttempts` admite enteros de 0 a 3; default 0. `--repair-attempts N` lo sustituye para la invocación y requiere `--workflow`. Los workflows `bugfix` y `feature` reutilizan el implementador tras un check ejecutado con exit code no cero, repasan la verificación y repiten la lista original de comandos. El límite se comparte entre fases. `review`, permisos denegados, ausencia de checks, errores del executor, timeout y cancelación no disparan reparación. Los límites de turnos y tiempo siguen siendo por fase, sin presupuesto global del workflow.
+
+```sh
+mars run "Corrige la regresión" --workflow bugfix --repair-attempts 1 --report reports/bugfix-001.json
+```
+
+`--report PATH` exporta JSON de las operaciones de una tarea no interactiva, también tras fallo. El destino debe ser un archivo nuevo permitido dentro del workspace; `.mars` y otras rutas sensibles quedan excluidas. `--verify` añade una operación de verificación al informe. El SDK expone `mars.lastRun` y el tipo público `RunReport`.
+
+El informe contiene comandos y salida de checks, que pueden incluir datos privados; no incluye campos de prompts ni respuestas del modelo. Los tokens son solo los comunicados por el proveedor, sin estimación de coste. `--no-save` no cancela una exportación solicitada expresamente con `--report`. Consulta las [ventajas y límites del harness](ventajas-del-harness.md).
+
 ## Instrucciones y skills
+
+La CLI incorpora notas y skills aprobadas de `.mars/knowledge.json` cuando `knowledge.enabled` está activo y no se usa `--no-save`. Pendientes, rechazadas y supersedidas no se cargan. La configuración se aplica al iniciar/reanudar una sesión; las aprobaciones y eliminaciones se refrescan al empezar cada fase. `includeProjectContext: false` desactiva la carga automática en el SDK. Consulta [memoria y captura local de procedimientos](direccion-producto.md) para revisar, aprobar y olvidar entradas.
 
 MARS carga `AGENTS.md` desde los directorios padre hasta el workspace y después `.mars/instructions.md`. Las instrucciones más cercanas al proyecto aparecen al final del contexto.
 
 Una skill de proyecto vive en `.mars/skills/<nombre>/SKILL.md`; una skill personal, en `~/.mars/skills/<nombre>/SKILL.md`. Si comparten nombre, prevalece la del proyecto. MARS selecciona hasta tres skills relevantes en cada tarea.
+
+Las skills aprobadas del almacén participan en esa selección: prevalecen los archivos de skill del proyecto, después las propuestas aprobadas y finalmente las skills personales del mismo nombre. Las notas aprobadas tienen un presupuesto JSON conjunto de 8.000 caracteres, cada nota hasta 1.200; cada procedimiento admite hasta 10.000. El almacén limita el total a 256 entradas y 1 MB. Se puede liberar espacio con `forget`; no se elimina conocimiento automáticamente.
 
 ```text
 .mars/

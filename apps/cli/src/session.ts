@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { AnthropicProvider, FakeProvider, FileEventLog, FileEvidenceStore, FileSessionStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
+import { AnthropicProvider, FakeProvider, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
 import type { CredentialStore, ModelProvider, RouteDecision } from '../../../packages/sdk/src/internal.js';
 import { ConversationScreen } from './conversation.js';
 import { authContext, authProvider, authenticatedProviders } from './commands/auth.js';
@@ -59,6 +59,8 @@ export async function providerForTarget(target: string, credentials: CredentialS
   if (!auth) throw new MarsError('ConfigurationError', `No authentication adapter for ${providerId}.`);
   const credential = await resolveAuthCredential(providerId, { store: credentials });
   if (!credential) throw new MarsError('AuthenticationError', `Connect ${providerId} with mars login ${providerId}.`);
+  if (providerId === 'anthropic' && credential.kind !== 'api-key') throw new MarsError('AuthenticationError', 'Anthropic requires an API key in MARS.');
+  if (providerId === 'kimi-code' && credential.kind === 'oauth' && process.env.MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH !== '1') throw new MarsError('ConfigurationError', 'Kimi subscription credentials require MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH=1.');
   const refreshed = await refreshCredential(auth, credential, { store: credentials, context: authContext(new AbortController().signal) });
   if (providerId === 'openai-codex') {
     if (refreshed.kind !== 'external' || refreshed.source !== 'codex-cli') throw new MarsError('AuthenticationError', 'OpenAI Codex requires ChatGPT authentication managed by Codex.');
@@ -88,6 +90,7 @@ export async function createSessionMars(target: string, root: string, values: Re
   const roleSelection = await workflowRoleProviders(root, values, credentials, target, provider, loaded.config);
   const options = {
     workspace: root, provider, model, sessionId, sessionStore,
+    knowledgeStore: values['no-save'] === true || !loaded.config.knowledge.enabled ? undefined : new FileKnowledgeStore(root),
     maxTurns: positive(typeof values['max-turns'] === 'string' ? values['max-turns'] : undefined, loaded.config.limits.maxTurns),
     maxToolCalls: positive(typeof values['max-tool-calls'] === 'string' ? values['max-tool-calls'] : undefined, loaded.config.limits.maxToolCalls),
     timeoutMs: positive(typeof values.timeout === 'string' ? values.timeout : undefined, loaded.config.limits.timeoutMs),
@@ -95,6 +98,7 @@ export async function createSessionMars(target: string, root: string, values: Re
     retryDelayMs: positive(typeof values['retry-delay'] === 'string' ? values['retry-delay'] : undefined, loaded.config.limits.retryDelayMs),
     maxContextChars: loaded.config.limits.maxContextChars,
     verificationCommands: loaded.config.verification.commands,
+    maxRepairAttempts: typeof values['repair-attempts'] === 'string' ? Number(values['repair-attempts']) : loaded.config.verification.maxRepairAttempts,
     shellPolicy, permissionPolicies: { ...loaded.config.permissions, shell: shellPolicy }, approveShell: approval(screen), includeProjectContext: true,
     evidenceStore,
     eventLog: eventLog?.sink,
@@ -102,6 +106,11 @@ export async function createSessionMars(target: string, root: string, values: Re
     ...(typeof values.sandbox === 'string' ? { sandbox: { mode: values.sandbox as 'host' | 'docker', image: process.env.MARS_SANDBOX_IMAGE } } : process.env.MARS_SANDBOX === 'docker' ? { sandbox: { mode: 'docker' as const, image: process.env.MARS_SANDBOX_IMAGE } } : {}),
     ...(roleSelection?.providers ? { roleProviders: roleSelection.providers } : {}),
     emit: (event: import('../../../packages/core/src/index.js').AgentEvent) => {
+      if (event.type === 'knowledge:proposed') {
+        const notice = `[${event.kind} ${event.status}] ${event.id} · ${safe(event.name)}${event.status === 'pending' ? ` · review: mars ${event.kind === 'memory' ? 'memory' : 'skills'} show ${event.id}` : ''}`;
+        if (screen) screen.addNotice(notice); else process.stderr.write(`\n${notice}\n`);
+        return;
+      }
       if (screen) { screen.handleEvent(event); return; }
       if (event.type === 'model:text') process.stdout.write(safe(event.text));
       if (event.type === 'tool:start') process.stderr.write(`\n[tool] ${safe(event.tool)}\n`);

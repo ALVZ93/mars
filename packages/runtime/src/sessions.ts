@@ -4,7 +4,19 @@ import { dirname, join, resolve } from 'node:path';
 import { MarsError } from '../../core/src/index.js';
 import type { AgentMessage } from '../../core/src/index.js';
 
+export interface SessionRunReceipt {
+  id: string;
+  sessionId: string;
+  kind: 'run' | 'workflow' | 'verify';
+  status: 'completed' | 'failed' | 'cancelled';
+  verificationStatus: 'not-run' | 'passed' | 'failed';
+  verificationCommands: string[];
+  messageCount: number;
+  taskStartMessageCount: number;
+  finishedAt: string;
+}
 export interface Session {
+  schemaVersion?: 1;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -13,6 +25,7 @@ export interface Session {
   messages: AgentMessage[];
   metadata: Record<string, unknown>;
   status?: 'active' | 'completed' | 'failed' | 'cancelled';
+  lastRun?: SessionRunReceipt;
 }
 export interface SessionSummary {
   id: string;
@@ -54,9 +67,19 @@ function isMessage(value: unknown): value is AgentMessage {
 function parseSession(value: unknown): Session {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
   const item = value as Record<string, unknown>;
+  if (item.schemaVersion !== undefined && item.schemaVersion !== 1) throw new Error();
   if (typeof item.id !== 'string' || !validId(item.id) || typeof item.createdAt !== 'string' || typeof item.updatedAt !== 'string' || typeof item.workspace !== 'string' || typeof item.model !== 'string' || !Array.isArray(item.messages) || !item.messages.every(isMessage) || !item.metadata || typeof item.metadata !== 'object' || Array.isArray(item.metadata)) throw new Error();
   if (item.status !== undefined && !['active', 'completed', 'failed', 'cancelled'].includes(String(item.status))) throw new Error();
-  return structuredClone(item as unknown as Session);
+  if (item.lastRun !== undefined) {
+    const receipt = item.lastRun as SessionRunReceipt;
+    if (!receipt || typeof receipt !== 'object' || !validId(receipt.id) || receipt.sessionId !== item.id || !['run', 'workflow', 'verify'].includes(receipt.kind)
+      || !['completed', 'failed', 'cancelled'].includes(receipt.status) || !['not-run', 'passed', 'failed'].includes(receipt.verificationStatus)
+      || !Array.isArray(receipt.verificationCommands) || receipt.verificationCommands.length > 32 || receipt.verificationCommands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096)
+      || (receipt.verificationStatus === 'passed' && !receipt.verificationCommands.length) || !Number.isSafeInteger(receipt.messageCount) || receipt.messageCount < 0
+      || !Number.isSafeInteger(receipt.taskStartMessageCount) || receipt.taskStartMessageCount < 0 || receipt.taskStartMessageCount > receipt.messageCount
+      || typeof receipt.finishedAt !== 'string' || !Number.isFinite(Date.parse(receipt.finishedAt))) throw new Error();
+  }
+  return structuredClone({ ...item, schemaVersion: 1 } as unknown as Session);
 }
 
 /** Append-like snapshots are stored as atomic JSON files for simple recovery and debugging. */

@@ -13,9 +13,9 @@ export function isCredential(value: unknown): value is Credential {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   if (typeof record.provider !== 'string' || !record.provider || typeof record.kind !== 'string') return false;
-  if (record.kind === 'api-key') return typeof record.secret === 'string';
+  if (record.kind === 'api-key') return typeof record.secret === 'string' && Boolean(record.secret.trim());
   if (record.kind === 'external') return typeof record.source === 'string' && Boolean(record.source);
-  if (record.kind !== 'oauth' || typeof record.accessToken !== 'string') return false;
+  if (record.kind !== 'oauth' || typeof record.accessToken !== 'string' || !record.accessToken.trim()) return false;
   if (record.refreshToken !== undefined && typeof record.refreshToken !== 'string') return false;
   if (record.expiresAt !== undefined && (typeof record.expiresAt !== 'number' || !Number.isFinite(record.expiresAt))) return false;
   if (record.tokenType !== undefined && typeof record.tokenType !== 'string') return false;
@@ -52,9 +52,11 @@ export class FileCredentialStore implements CredentialStore {
   }
 
   async set(credential: Credential): Promise<void> {
+    if (!isCredential(credential)) throw new MarsError('AuthenticationError', 'Invalid credential for the selected provider.');
+    const snapshot = clone(credential);
     await this.#serial(async () => {
       const values = await this.#read();
-      values[credential.provider] = clone(credential);
+      values[snapshot.provider] = snapshot;
       await this.#write(values);
     });
   }

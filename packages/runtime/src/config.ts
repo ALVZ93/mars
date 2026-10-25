@@ -5,6 +5,7 @@ import { MarsError } from '../../core/src/index.js';
 import type { Policy } from './index.js';
 
 export interface MarsConfig {
+  version: 1;
   model: { default?: string };
   routing: {
     enabled: boolean;
@@ -28,8 +29,9 @@ export interface MarsConfig {
     maxRetries: number;
     retryDelayMs: number;
   };
-  verification: { commands: string[] };
+  verification: { commands: string[]; maxRepairAttempts: number };
   mcp: { servers: McpServerConfig[] };
+  knowledge: { enabled: boolean };
 }
 
 export interface McpServerConfig {
@@ -48,21 +50,25 @@ export interface ConfigPaths {
   legacyProject: string;
 }
 export type ConfigPatch = {
+  version?: 1;
   model?: Partial<MarsConfig['model']>;
   routing?: Partial<MarsConfig['routing']>;
   permissions?: Partial<MarsConfig['permissions']>;
   limits?: Partial<MarsConfig['limits']>;
   verification?: Partial<MarsConfig['verification']>;
   mcp?: Partial<MarsConfig['mcp']>;
+  knowledge?: Partial<MarsConfig['knowledge']>;
 };
 
 export const DEFAULT_CONFIG: MarsConfig = {
+  version: 1,
   model: {},
   routing: { enabled: false },
   permissions: { shell: 'ask', destructiveShell: 'deny', network: 'ask', gitCommit: 'ask', gitPush: 'ask' },
   limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500 },
-  verification: { commands: [] },
+  verification: { commands: [], maxRepairAttempts: 0 },
   mcp: { servers: [] },
+  knowledge: { enabled: true },
 };
 
 export function defaultConfigPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -90,20 +96,29 @@ function positive(value: unknown, fallback: number): number {
 function parseConfig(value: unknown): ConfigPatch {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MarsError('ConfigurationError', 'MARS config must be a JSON object.');
   const source = value as Record<string, unknown>;
+  if (source.version !== undefined && source.version !== 1) throw new MarsError('ConfigurationError', 'Unsupported MARS config version.');
   const model = source.model;
   const routing = source.routing;
   const permissions = source.permissions;
   const limits = source.limits;
   const verification = source.verification;
   const mcp = source.mcp;
-  const result: ConfigPatch = {};
+  const knowledge = source.knowledge;
+  const result: ConfigPatch = { version: 1 };
+  if (knowledge !== undefined) {
+    if (!knowledge || typeof knowledge !== 'object' || Array.isArray(knowledge) || typeof (knowledge as Record<string, unknown>).enabled !== 'boolean') throw new MarsError('ConfigurationError', 'Config knowledge.enabled must be boolean.');
+    result.knowledge = { enabled: (knowledge as { enabled: boolean }).enabled };
+  }
   if (model !== undefined) {
     if (!model || typeof model !== 'object' || Array.isArray(model)) throw new MarsError('ConfigurationError', 'Config model must be an object.');
+    const target = (model as Record<string, unknown>).default;
+    if (target !== undefined && (typeof target !== 'string' || !/^[^:\s]+:\S+$/.test(target.trim()))) throw new MarsError('ConfigurationError', 'Config model.default must be provider:model.');
     result.model = { default: optionalString((model as Record<string, unknown>).default) };
   }
   if (routing !== undefined) {
     if (!routing || typeof routing !== 'object' || Array.isArray(routing)) throw new MarsError('ConfigurationError', 'Config routing must be an object.');
     const value = routing as Record<string, unknown>;
+    for (const role of ['planner', 'implementer', 'reviewer', 'verifier']) if (value[role] !== undefined && (typeof value[role] !== 'string' || !/^[^:\s]+:\S+$/.test((value[role] as string).trim()))) throw new MarsError('ConfigurationError', `Config routing.${role} must be provider:model.`);
     if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new MarsError('ConfigurationError', 'Config routing.enabled must be boolean.');
     result.routing = { ...(value.enabled === undefined ? {} : { enabled: value.enabled }), ...(optionalString(value.planner) ? { planner: optionalString(value.planner) } : {}), ...(optionalString(value.implementer) ? { implementer: optionalString(value.implementer) } : {}), ...(optionalString(value.reviewer) ? { reviewer: optionalString(value.reviewer) } : {}), ...(optionalString(value.verifier) ? { verifier: optionalString(value.verifier) } : {}) };
   }
@@ -131,8 +146,10 @@ function parseConfig(value: unknown): ConfigPatch {
   if (verification !== undefined) {
     if (!verification || typeof verification !== 'object' || Array.isArray(verification)) throw new MarsError('ConfigurationError', 'Config verification must be an object.');
     const commands = (verification as Record<string, unknown>).commands;
-    if (!Array.isArray(commands) || commands.length > 32 || commands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096)) throw new MarsError('ConfigurationError', 'Config verification.commands must contain at most 32 non-empty commands.');
-    result.verification = { commands: commands.map(command => command.trim()) };
+    if (commands !== undefined && (!Array.isArray(commands) || commands.length > 32 || commands.some(command => typeof command !== 'string' || !command.trim() || command.length > 4096))) throw new MarsError('ConfigurationError', 'Config verification.commands must contain at most 32 non-empty commands.');
+    const attempts = (verification as Record<string, unknown>).maxRepairAttempts;
+    if (attempts !== undefined && (!Number.isSafeInteger(attempts) || (attempts as number) < 0 || (attempts as number) > 3)) throw new MarsError('ConfigurationError', 'Config verification.maxRepairAttempts must be an integer from 0 to 3.');
+    result.verification = { ...(commands === undefined ? {} : { commands: (commands as string[]).map(command => command.trim()) }), ...(attempts === undefined ? {} : { maxRepairAttempts: attempts as number }) };
   }
   if (mcp !== undefined) {
     if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) throw new MarsError('ConfigurationError', 'Config mcp must be an object.');
@@ -164,10 +181,11 @@ export function mergeConfig(...configs: Array<ConfigPatch | undefined>): MarsCon
   for (const config of configs) {
     if (!config) continue;
     if (config.model) result.model = { ...result.model, ...config.model };
+    if (config.knowledge) result.knowledge = { ...result.knowledge, ...config.knowledge };
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
-    if (config.verification?.commands) result.verification = { commands: [...config.verification.commands] };
+    if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
   return result;
@@ -178,10 +196,11 @@ function mergePatch(...configs: Array<ConfigPatch | undefined>): ConfigPatch {
   for (const config of configs) {
     if (!config) continue;
     if (config.model) result.model = { ...result.model, ...config.model };
+    if (config.knowledge) result.knowledge = { ...result.knowledge, ...config.knowledge };
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
-    if (config.verification?.commands) result.verification = { commands: [...config.verification.commands] };
+    if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
   return result;
@@ -217,7 +236,7 @@ export async function loadConfig(workspace: string, env: NodeJS.ProcessEnv = pro
 
 export async function saveConfig(path: string, config: ConfigPatch): Promise<void> {
   const current = await readConfig(path);
-  const merged = mergePatch(current, parseConfig(config));
+  const merged = { ...mergePatch(current, parseConfig(config)), version: 1 };
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {

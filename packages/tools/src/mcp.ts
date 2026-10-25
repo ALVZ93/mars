@@ -75,6 +75,7 @@ export class McpStdioClient {
   #tools: McpToolDefinition[] = [];
   constructor(options: McpStdioServerOptions) {
     if (!options.name.trim() || !options.command.trim()) throw new MarsError('ConfigurationError', 'MCP server name and command are required.');
+    if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 2_147_483_647)) throw new MarsError('ConfigurationError', 'MCP timeout must be a positive integer.');
     this.options = { ...options, name: options.name.trim(), command: options.command.trim(), args: [...(options.args ?? [])], timeoutMs: options.timeoutMs ?? 30_000 };
   }
   async start(signal?: AbortSignal): Promise<McpToolDefinition[]> {
@@ -87,15 +88,32 @@ export class McpStdioClient {
     this.#closed = false;
     const child = spawn(this.options.command, this.options.args, { cwd: this.options.cwd, env: { ...allowedEnvironment(process.env), ...(this.options.env ?? {}) }, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     this.#child = child;
+    this.#buffer = '';
+    child.stderr.resume();
+    child.stdin.on('error', () => this.#failPending(new MarsError('ToolExecutionError', 'MCP input stream closed.')));
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => this.#onData(String(chunk)));
     child.on('error', error => this.#failPending(new MarsError('ToolExecutionError', `MCP server could not start: ${error.message}`)));
-    child.on('close', code => this.#failPending(new MarsError('ToolExecutionError', `MCP server exited with code ${code ?? 'unknown'}.`)));
+    child.on('close', code => {
+      if (this.#child === child) {
+        this.#closed = true; this.#start = undefined;
+        this.#failPending(new MarsError('ToolExecutionError', `MCP server exited with code ${code ?? 'unknown'}.`));
+      }
+    });
     try {
       await this.#request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'mars', version: '0.1.0' } }, signal);
       this.#notify('notifications/initialized', {});
-      const result = object(await this.#request('tools/list', {}, signal));
-      const values = Array.isArray(result?.tools) ? result.tools : [];
+      const values: unknown[] = [];
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const result = object(await this.#request('tools/list', cursor ? { cursor } : {}, signal));
+        if (Array.isArray(result?.tools)) values.push(...result.tools);
+        if (values.length > 1000) throw new MarsError('ToolExecutionError', 'MCP tool discovery exceeded the limit.');
+        cursor = typeof result?.nextCursor === 'string' && result.nextCursor ? result.nextCursor : undefined;
+        if (cursor && (cursors.has(cursor) || cursors.size >= 100)) throw new MarsError('ToolExecutionError', 'MCP tool pagination did not terminate.');
+        if (cursor) cursors.add(cursor);
+      } while (cursor);
       this.#tools = values.filter(item => {
         const value = object(item);
         return typeof value?.name === 'string' && value.name.trim();
@@ -126,6 +144,7 @@ export class McpStdioClient {
   }
   async close(): Promise<void> {
     this.#closed = true;
+    this.#start = undefined;
     this.#failPending(new MarsError('CancelledError', 'MCP server closed.'));
     const child = this.#child;
     this.#child = undefined;
@@ -177,11 +196,20 @@ export class McpStdioClient {
     this.#buffer += chunk;
     let index = this.#buffer.indexOf('\n');
     while (index >= 0) {
+      if (index > 1_000_000) { this.#overflow(); return; }
       const line = this.#buffer.slice(0, index).trim();
       this.#buffer = this.#buffer.slice(index + 1);
       if (line) this.#onLine(line);
       index = this.#buffer.indexOf('\n');
     }
+    if (this.#buffer.length > 1_000_000) this.#overflow();
+  }
+  #overflow(): void {
+    this.#buffer = '';
+    this.#closed = true;
+    this.#start = undefined;
+    this.#failPending(new MarsError('ToolExecutionError', 'MCP response exceeded the size limit.'));
+    this.#child?.kill();
   }
   #onLine(line: string): void {
     let value: unknown;

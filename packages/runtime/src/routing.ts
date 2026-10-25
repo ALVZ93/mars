@@ -66,20 +66,31 @@ function configuredTarget(config: Partial<MarsConfig> | undefined, role: TaskRol
 
 export function routeTask(task: string, options: RouteOptions = {}): RouteDecision {
   const role = options.role ?? classifyTask(task);
-  if (options.explicit) return { target: options.explicit, role, reason: 'explicit model selection', candidates: [options.explicit] };
   const configured = configuredTarget(options.config, role) ?? (options.config?.model?.default);
-  if (configured) return { target: configured, role, reason: configuredTarget(options.config, role) ? `configured ${role} model` : 'configured default model', candidates: [configured] };
   const allowed = new Set(options.authenticatedProviders ?? []);
   const providerFilter = options.allowedProviders ? new Set(options.allowedProviders) : undefined;
   const catalog = options.catalog ?? MODEL_CATALOG;
+  const selectedTarget = options.explicit ?? configured;
+  const supports = (model: ModelDescriptor): boolean => {
+    const required = options.required;
+    if (!required) return true;
+    for (const key of ['tools', 'vision', 'reasoning', 'structuredOutput', 'streaming'] as const) if (required[key] === true && !model.capabilities[key]) return false;
+    return required.contextWindow === undefined || (model.contextWindow !== undefined && model.contextWindow >= required.contextWindow);
+  };
+  if (selectedTarget) {
+    const model = catalog.find(model => model.id === selectedTarget);
+    const provider = selectedTarget.slice(0, selectedTarget.indexOf(':'));
+    if (!/^[^:\s]+:\S+$/.test(selectedTarget)) throw new Error('Invalid model target. Use provider:model.');
+    if (providerFilter && !providerFilter.has(provider)) throw new Error('Selected model provider is not allowed.');
+    if (options.authenticatedProviders !== undefined && !allowed.has(provider) && !['fake', 'ollama'].includes(provider)) throw new Error('Selected model provider is not authenticated.');
+    if (options.required && (!model || !supports(model))) throw new Error('Selected model does not have the required known capabilities.');
+    return { target: selectedTarget, role, reason: options.explicit ? 'explicit model selection' : configuredTarget(options.config, role) ? `configured ${role} model` : 'configured default model', candidates: [selectedTarget] };
+  }
   const routingEnabled = options.config?.routing?.enabled ?? true;
   const candidates = catalog.filter(model => {
     if (providerFilter && !providerFilter.has(model.provider)) return false;
     if (!(allowed.has(model.provider) || (model.provider === 'fake' && options.allowOffline === true))) return false;
-    const required = options.required;
-    if (!required) return true;
-    for (const key of ['tools', 'vision', 'reasoning', 'structuredOutput', 'streaming'] as const) if (required[key] === true && !model.capabilities[key]) return false;
-    return required.contextWindow === undefined || (model.contextWindow ?? Number.POSITIVE_INFINITY) >= required.contextWindow;
+    return supports(model);
   });
   if (!candidates.length) throw new Error('No authenticated model provider is available. Run `mars auth status` or configure MARS_MODEL.');
   const scored = candidates.map((model, index) => {

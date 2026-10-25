@@ -3,6 +3,8 @@ import { Codex } from '@openai/codex-sdk';
 import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 import { OpenAICompatibleProvider } from './openai.js';
+import { createHash } from 'node:crypto';
+import { jsonSse } from './sse.js';
 
 type FetchLike = typeof fetch;
 type Json = Record<string, unknown>;
@@ -44,19 +46,22 @@ async function responseDiagnostic(response: Response): Promise<string | undefine
   } catch { return undefined; }
 }
 
-async function sendRequest(fetchImpl: FetchLike, url: string, init: RequestInit, signal: AbortSignal, provider: string): Promise<Response> {
+async function sendRequest(fetchImpl: FetchLike, url: string, init: RequestInit, signal: AbortSignal, provider: string, secrets: readonly string[] = []): Promise<Response> {
   try { return await fetchImpl(url, { ...init, signal }); }
   catch (error) {
     checkAbort(signal);
     const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined;
     const code = error instanceof Error && error.cause && typeof error.cause === 'object' ? asString((error.cause as Json).code) : undefined;
-    const detail = diagnostic([error instanceof Error ? error.message : undefined, cause, code].filter(Boolean).join(': '));
+    let safe = [error instanceof Error ? error.message : undefined, cause, code].filter(Boolean).join(': ');
+    for (const secret of secrets) if (secret) safe = safe.replaceAll(secret, '[redacted]');
+    const detail = diagnostic(safe);
     throw new MarsError('ProviderUnavailableError', `${provider} request failed${detail ? ` (${detail})` : ''}. Check connectivity and model availability.`);
   }
 }
-async function ensureOk(response: Response, provider: string): Promise<void> {
+async function ensureOk(response: Response, provider: string, secrets: readonly string[] = []): Promise<void> {
   if (response.ok) return;
-  const detail = await responseDiagnostic(response);
+  let detail = await responseDiagnostic(response);
+  for (const secret of secrets) if (secret) detail = detail?.replaceAll(secret, '[redacted]');
   const suffix = ` (HTTP ${response.status}${detail ? `: ${detail}` : ''})`;
   if (response.status === 401 || response.status === 403) throw new MarsError('AuthenticationError', `${provider} rejected the credential or model access${suffix}.`);
   if (response.status === 429) throw new MarsError('RateLimitError', `${provider} rate or usage limit reached${suffix}.`);
@@ -64,40 +69,6 @@ async function ensureOk(response: Response, provider: string): Promise<void> {
   throw new MarsError('ProviderUnavailableError', `${provider} request failed${suffix}. Check connectivity and model availability.`);
 }
 
-async function* sse(response: Response, signal: AbortSignal): AsyncGenerator<Json> {
-  if (!response.body) throw new MarsError('ProviderUnavailableError', 'Provider returned no stream body.');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const onAbort = () => { void reader.cancel().catch(() => {}); };
-  signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    while (true) {
-      checkAbort(signal);
-      const chunk = await reader.read();
-      buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
-      if (chunk.done && buffer.trim()) buffer += '\n\n';
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary >= 0) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n').trim();
-        if (data && data !== '[DONE]') {
-          try {
-            const parsed: unknown = JSON.parse(data);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) yield parsed as Json;
-          } catch { throw new MarsError('ProviderUnavailableError', 'Provider returned malformed streaming data.'); }
-        }
-        boundary = buffer.indexOf('\n\n');
-      }
-      if (chunk.done) break;
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
 
 function anthropicMessages(messages: AgentMessage[]): { system?: string; messages: Array<{ role: 'user' | 'assistant'; content: unknown }> } {
   const system = messages.filter(message => message.role === 'system').map(message => message.content).join('\n').trim();
@@ -150,14 +121,18 @@ export class AnthropicProvider implements ModelProvider {
     const converted = anthropicMessages(request.messages);
     const body = { model: request.model, max_tokens: this.#maxTokens, stream: true, ...converted, ...(request.tools.length ? { tools: anthropicTools(request) } : {}) };
     let response: Response;
-    try { response = await sendRequest(this.#fetch, this.#url, { method: 'POST', headers, body: JSON.stringify(body) }, signal, 'Anthropic'); }
+    const secrets = this.#credential.kind === 'api-key' ? [this.#credential.secret] : [this.#credential.accessToken, this.#credential.refreshToken ?? ''];
+    try { response = await sendRequest(this.#fetch, this.#url, { method: 'POST', headers, body: JSON.stringify(body) }, signal, 'Anthropic', secrets); }
     catch (error) { checkAbort(signal); throw error; }
-    await ensureOk(response, 'Anthropic');
+    await ensureOk(response, 'Anthropic', secrets);
     let content = '';
     const tools = new Map<number, { id: string; name: string; json: string; input?: unknown }>();
     let sawStop = false;
     let usage: { inputTokens: number; outputTokens: number } | undefined;
-    for await (const event of sse(response, signal)) {
+    let outputSize = 0;
+    for await (const event of jsonSse(response, signal)) {
+      outputSize += JSON.stringify(event).length;
+      if (outputSize > 1_000_000) throw new MarsError('ContextLimitError', 'Provider output exceeded the limit.');
       checkAbort(signal);
       const type = asString(event.type);
       if (type === 'message_start') {
@@ -199,7 +174,7 @@ export class AnthropicProvider implements ModelProvider {
         }
         const stop = delta && typeof delta === 'object' && !Array.isArray(delta) ? asString((delta as Json).stop_reason) : undefined;
         if (stop) sawStop = true;
-        if (stop && !['end_turn', 'tool_use', 'max_tokens', 'stop_sequence'].includes(stop)) throw new MarsError('ProviderUnavailableError', 'Anthropic response was incomplete.');
+        if (stop && !['end_turn', 'tool_use', 'stop_sequence'].includes(stop)) throw new MarsError('ProviderUnavailableError', 'Anthropic response was incomplete.');
       } else if (type === 'message_stop') sawStop = true;
       else if (type === 'error') throw new MarsError('ProviderUnavailableError', 'Anthropic returned a streaming error.');
     }
@@ -279,6 +254,8 @@ export class OpenAICodexProvider implements ModelProvider {
   readonly #codex: CodexLike;
   #thread?: CodexThreadLike;
   #sentMessageCount = 0;
+  #sentPrefix = '';
+  #threadSettings = '';
   constructor(credential: Credential, options: CodexProviderOptions = {}) {
     if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new MarsError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
     this.#codex = options.codex ?? new Codex();
@@ -287,7 +264,11 @@ export class OpenAICodexProvider implements ModelProvider {
     checkAbort(signal);
     let result: Awaited<ReturnType<CodexThreadLike['run']>>;
     try {
-      const continuing = this.#thread !== undefined && this.#sentMessageCount <= request.messages.length;
+      const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+      const settings = digest([request.model, request.tools]);
+      const continuing = this.#thread !== undefined && this.#threadSettings === settings
+        && this.#sentMessageCount <= request.messages.length
+        && this.#sentPrefix === digest(request.messages.slice(0, this.#sentMessageCount));
       const thread = continuing ? this.#thread! : this.#codex.startThread({
           model: request.model,
           modelReasoningEffort: 'low',
@@ -305,6 +286,8 @@ export class OpenAICodexProvider implements ModelProvider {
       result = await thread.run(codexPrompt(request, updates), { outputSchema: codexOutputSchema, signal });
       this.#thread = thread;
       this.#sentMessageCount = request.messages.length;
+      this.#sentPrefix = digest(request.messages);
+      this.#threadSettings = settings;
     } catch (error) {
       this.#thread = undefined;
       this.#sentMessageCount = 0;

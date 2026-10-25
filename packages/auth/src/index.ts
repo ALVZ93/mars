@@ -107,6 +107,7 @@ export async function resolveAuthCredential(provider: string, options: {
   store?: CredentialStore;
   env?: NodeJS.ProcessEnv;
 } = {}): Promise<Credential | undefined> {
+  if (options.explicit) return sanitiseCredential(provider, options.explicit);
   const stored = await options.store?.get(provider);
   const environment = options.env ?? process.env;
   const secret = (environmentNames[provider] ?? []).map(name => environment[name]).find(value => Boolean(value?.trim()));

@@ -13,5 +13,6 @@ export type AgentEvent =
   | { type: 'permission:requested' | 'permission:granted' | 'permission:denied'; permission: string; target?: string }
   | { type: 'context:built' | 'context:compacted'; chars?: number }
   | { type: 'workflow:start' | 'workflow:end'; workflow: string }
-  | { type: 'evidence:recorded'; workflow?: string; skills: string[]; passed: boolean };
+  | { type: 'evidence:recorded'; workflow?: string; skills: string[]; passed: boolean }
+  | { type: 'knowledge:proposed'; id: string; kind: 'memory' | 'skill'; name: string; status: 'pending' | 'approved' | 'rejected' | 'superseded' };
 export type EventSink = (event: AgentEvent) => void;

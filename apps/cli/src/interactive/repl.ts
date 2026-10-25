@@ -7,16 +7,18 @@ import { loginCommand } from '../commands/auth.js';
 import { configCommand, evidenceCommand, healthCommand, renderCheckReport, selectModel, sessionsCommand, skillsCommand, workflowsCommand } from '../commands/index.js';
 import { createSessionMars } from '../session.js';
 import { help, prompt, safe, targetParts } from '../utils/common.js';
+import { knowledgeCommand, learnCommand } from '../commands/knowledge.js';
 export async function createInteractiveSession(root: string, values: Record<string, unknown>, credentials: CredentialStore, target: string, sessionId?: string, screen?: ConversationScreen) {
   return createSessionMars(target, root, values, credentials, sessionId, screen);
 }
 
 export async function interactive(root: string, values: Record<string, unknown>, credentials: CredentialStore, target: string, sessionId?: string): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) throw new MarsError('ConfigurationError', 'Interactive mode requires a terminal.');
   let currentTarget = target;
   const loaded = await loadConfig(root);
   const screen = new ConversationScreen(currentTarget, root, loaded.config.limits.maxContextChars);
-  screen.start();
   let activeMars = await createInteractiveSession(root, values, credentials, currentTarget, sessionId, screen);
+  screen.start();
   const sessionStore = activeMars.sessionStore ?? new FileSessionStore(path.join(root, '.mars', 'sessions'));
   const outside = async <T>(work: () => Promise<T>): Promise<T> => {
     screen.suspend();
@@ -89,21 +91,43 @@ export async function interactive(root: string, values: Record<string, unknown>,
       }
       if (task === '/sessions') { await outside(() => sessionsCommand(root)); continue; }
       if (task === '/config') { await outside(() => configCommand(['config'], root)); continue; }
-      if (task === '/skills') { await outside(() => skillsCommand(root)); continue; }
+      if (task === '/skills' || task.startsWith('/skills ') || task === '/memory' || task.startsWith('/memory ') || task.startsWith('/remember ') || task === '/learn' || task.startsWith('/learn ')) {
+        try {
+          await outside(async () => {
+            const [command, ...args] = task.split(/\s+/);
+            if (command === '/learn') {
+              if (!activeMars.mars.knowledgeStore) throw new MarsError('ConfigurationError', 'Learning requires project knowledge integration; enable it and start a saved session.');
+              await learnCommand(root, args[0] ?? activeMars.mars.id);
+            } else if (command === '/remember') await knowledgeCommand(root, 'memory', ['add', ...args]);
+            else if (command === '/memory') await knowledgeCommand(root, 'memory', args);
+            else if (args.length) await knowledgeCommand(root, 'skill', args);
+            else await skillsCommand(root);
+          });
+        } catch (error) { screen.addNotice(safe(error instanceof Error ? error.message : 'Knowledge command failed.')); }
+        continue;
+      }
       if (task === '/evidence') { await outside(() => evidenceCommand(root)); continue; }
       if (task === '/health') { await outside(() => healthCommand(root, credentials)); continue; }
       if (task === '/workflows') { await outside(workflowsCommand); continue; }
       if (task === '/check') { try { await outside(async () => renderCheckReport(await activeMars.mars.verify())); } catch (error) { screen.addNotice(safe(error instanceof Error ? error.message : 'Check failed.')); } continue; }
       if (task === '/route') { screen.addNotice(JSON.stringify(routeTask('implement task', { explicit: currentTarget }), null, 2)); continue; }
-      if (task === '/new') { await activeMars.mars.close(); await activeMars.eventLog?.flush(); activeMars = await createSessionMars(currentTarget, root, values, credentials, undefined, screen); attach(); screen.addNotice('New persisted session.'); continue; }
+      if (task === '/new') {
+        try {
+          const replacement = await createSessionMars(currentTarget, root, values, credentials, undefined, screen);
+          await activeMars.mars.close(); await activeMars.eventLog?.flush();
+          activeMars = replacement; attach(); screen.addNotice('New session.');
+        } catch (error) { screen.addNotice(safe(error instanceof Error ? error.message : 'New session failed.')); }
+        continue;
+      }
       if (task.startsWith('/model ')) {
         const nextTarget = task.slice('/model '.length).trim();
         try {
           targetParts(nextTarget);
           const previousId = values['no-save'] === true ? undefined : activeMars.mars.id;
+          const replacement = await createSessionMars(nextTarget, root, values, credentials, previousId, screen);
           await activeMars.mars.close();
           await activeMars.eventLog?.flush();
-          activeMars = await createSessionMars(nextTarget, root, values, credentials, previousId, screen);
+          activeMars = replacement;
           attach();
           currentTarget = nextTarget;
           screen.setModel(currentTarget);
@@ -112,25 +136,27 @@ export async function interactive(root: string, values: Record<string, unknown>,
         continue;
       }
       if (task.startsWith('/resume ')) {
+        try {
         const id = task.slice('/resume '.length).trim();
         const session = await sessionStore.get(id);
         if (!session) { screen.addNotice('Session not found.'); continue; }
         if (session.workspace !== root) { screen.addNotice('Session belongs to another workspace.'); continue; }
-        currentTarget = session.model;
+        const replacement = await createSessionMars(session.model, root, values, credentials, id, screen);
         await activeMars.mars.close();
         await activeMars.eventLog?.flush();
-        activeMars = await createSessionMars(currentTarget, root, values, credentials, id, screen);
+        activeMars = replacement;
+        currentTarget = session.model;
         attach();
         screen.setModel(currentTarget);
         screen.addNotice(`Resumed ${id}.`);
+        } catch (error) { screen.addNotice(safe(error instanceof Error ? error.message : 'Resume failed.')); }
         continue;
       }
       if (task.startsWith('/')) { screen.addNotice('Unknown command. Use /help.'); continue; }
       await execute(task);
     }
   } finally {
-    await activeMars.mars.close();
-    await activeMars.eventLog?.flush();
-    screen.stop();
+    try { await activeMars.mars.close(); await activeMars.eventLog?.flush(); }
+    finally { screen.stop(); }
   }
 }

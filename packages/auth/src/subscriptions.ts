@@ -1,12 +1,9 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
 import { MarsError } from '../../core/src/index.js';
 import type { AuthContext, AuthMethod, AuthProvider, AuthStatus, Credential, OAuthCredential } from './index.js';
 
 type FetchLike = typeof fetch;
 type TokenShape = Record<string, unknown>;
 
-const asBase64Url = (value: Buffer): string => value.toString('base64url');
 const secondsFrom = (value: unknown, fallback?: number): number | undefined => {
   const number = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(number) && number > 0 ? Date.now() + Math.floor(number * 1000) - 30_000 : fallback;
@@ -38,23 +35,6 @@ const requestJson = async (fetchImpl: FetchLike, input: string | URL, init: Requ
   } catch { throw new MarsError('AuthenticationError', 'Authentication response was invalid.'); }
 };
 
-interface PkceConfig {
-  provider: string;
-  clientId: string;
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  scopes: string;
-  callbackPath: string;
-  callbackPort: number;
-  authorizationParams?: Record<string, string>;
-  tokenParams?: Record<string, string>;
-  tokenFormat?: 'form' | 'json';
-  tokenState?: boolean;
-  stateFromVerifier?: boolean;
-  timeoutMs?: number;
-  fetch?: FetchLike;
-  parseToken?: (value: TokenShape, provider: string, fallbackRefresh?: string) => OAuthCredential;
-}
 
 function parseOAuthToken(value: TokenShape, provider: string, fallbackRefresh?: string): OAuthCredential {
   if (typeof value.access_token !== 'string' || !value.access_token) throw new MarsError('AuthenticationError', 'Authentication response did not contain an access token.');
@@ -68,93 +48,6 @@ function parseOAuthToken(value: TokenShape, provider: string, fallbackRefresh?: 
     ...(typeof value.token_type === 'string' ? { tokenType: value.token_type } : {}),
     ...(scope?.length ? { scope } : {}),
   };
-}
-
-async function browserPkce(config: PkceConfig, context: AuthContext): Promise<OAuthCredential> {
-  safeHttpUrl(config.authorizationEndpoint);
-  safeHttpUrl(config.tokenEndpoint);
-  const verifier = asBase64Url(randomBytes(48));
-  const challenge = asBase64Url(createHash('sha256').update(verifier).digest());
-  const state = config.stateFromVerifier ? verifier : asBase64Url(randomBytes(32));
-  const server = createServer();
-  let settled = false;
-  let finish!: (value: { code: string } | Error) => void;
-  const callback = new Promise<{ code: string }>((resolve, reject) => {
-    finish = value => {
-      if (settled) return;
-      settled = true;
-      if (value instanceof Error) reject(value); else resolve(value);
-      server.close();
-    };
-  });
-  void callback.catch(() => {});
-  server.on('request', (request, response) => {
-    try {
-      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-      if (url.pathname !== config.callbackPath) { response.writeHead(404).end(); return; }
-      if (url.searchParams.get('state') !== state) {
-        response.writeHead(400).end('Invalid authentication state.');
-        finish(new MarsError('AuthenticationError', 'Authentication state validation failed.'));
-        return;
-      }
-      const providerError = url.searchParams.get('error');
-      if (providerError) {
-        response.writeHead(400).end('MARS login was denied.');
-        finish(new MarsError('AuthenticationError', 'Authentication was denied.'));
-        return;
-      }
-      const code = url.searchParams.get('code');
-      if (!code) {
-        response.writeHead(400).end('Missing authorization code.');
-        finish(new MarsError('AuthenticationError', 'Authentication response did not contain a code.'));
-        return;
-      }
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<p>MARS login complete. You can close this window.</p>');
-      finish({ code });
-    } catch {
-      response.writeHead(400).end('Invalid callback.');
-      finish(new MarsError('AuthenticationError', 'Invalid authentication callback.'));
-    }
-  });
-  const abort = () => finish(abortError(context.signal));
-  context.signal.addEventListener('abort', abort, { once: true });
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(config.callbackPort, '127.0.0.1', resolve);
-    });
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new MarsError('ConfigurationError', 'Could not allocate the authentication callback.');
-    const redirectUri = `http://localhost:${address.port}${config.callbackPath}`;
-    const authorization = safeHttpUrl(config.authorizationEndpoint);
-    authorization.search = new URLSearchParams({
-      response_type: 'code', client_id: config.clientId, redirect_uri: redirectUri,
-      scope: config.scopes, state, code_challenge: challenge, code_challenge_method: 'S256',
-      ...config.authorizationParams,
-    }).toString();
-    context.notify?.({ type: 'auth-url', url: authorization.toString(), instructions: 'Completa el login en el navegador; MARS espera el callback local.' });
-    await context.openUrl(authorization.toString());
-    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new MarsError('TimeoutError', 'Authentication timed out.')), config.timeoutMs ?? 120_000); });
-    const result = await Promise.race([callback, timeout]);
-    const bodyValues = { grant_type: 'authorization_code', client_id: config.clientId, code: result.code, redirect_uri: redirectUri, code_verifier: verifier, ...(config.tokenState ? { state } : {}), ...config.tokenParams };
-    const format = config.tokenFormat ?? 'form';
-    const token = await requestJson(config.fetch ?? fetch, config.tokenEndpoint, {
-      method: 'POST',
-      headers: format === 'json' ? { accept: 'application/json', 'content-type': 'application/json' } : { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
-      body: format === 'json' ? JSON.stringify(bodyValues) : new URLSearchParams(bodyValues),
-    }, context.signal);
-    return (config.parseToken ?? parseOAuthToken)(token, config.provider);
-  } catch (error) {
-    if (error instanceof MarsError) throw error;
-    if (context.signal.aborted) throw abortError(context.signal);
-    throw new MarsError('AuthenticationError', 'Browser authentication failed.');
-  } finally {
-    if (timer) clearTimeout(timer);
-    context.signal.removeEventListener('abort', abort);
-    if (!settled) finish(new MarsError('CancelledError', 'Authentication cancelled.'));
-    server.close();
-  }
 }
 
 interface DevicePollOptions<T> {
@@ -204,26 +97,16 @@ export interface AnthropicAuthOptions {
   callbackPort?: number;
   timeoutMs?: number;
 }
-const ANTHROPIC_CLIENT_ID = Buffer.from('9d1c250a-e61b-44d9-88ed-594dd1962f5e').toString('base64');
-const ANTHROPIC_AUTH_URL = 'https://claude.ai/oauth/authorize';
-const ANTHROPIC_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
-const ANTHROPIC_SCOPES = 'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
 export class AnthropicAuthProvider implements AuthProvider {
   readonly id = 'anthropic';
   readonly displayName = 'Anthropic / Claude';
-  readonly #options: Required<Pick<AnthropicAuthOptions, 'clientId' | 'authorizationEndpoint' | 'tokenEndpoint' | 'callbackPort' | 'timeoutMs'>> & { fetch?: FetchLike };
-  constructor(options: AnthropicAuthOptions = {}) {
-    this.#options = { clientId: options.clientId ?? process.env.MARS_ANTHROPIC_CLIENT_ID ?? Buffer.from(ANTHROPIC_CLIENT_ID, 'base64').toString('utf8'), authorizationEndpoint: options.authorizationEndpoint ?? ANTHROPIC_AUTH_URL, tokenEndpoint: options.tokenEndpoint ?? ANTHROPIC_TOKEN_URL, callbackPort: options.callbackPort ?? 53692, timeoutMs: options.timeoutMs ?? 120_000, fetch: options.fetch };
-  }
-  methods(): readonly AuthMethod[] { return ['oauth-pkce']; }
-  async login(method: AuthMethod, context: AuthContext): Promise<OAuthCredential> {
-    if (method !== 'oauth-pkce') throw new MarsError('ConfigurationError', `${this.displayName} does not support ${method}.`);
-    return browserPkce({ provider: this.id, clientId: this.#options.clientId, authorizationEndpoint: this.#options.authorizationEndpoint, tokenEndpoint: this.#options.tokenEndpoint, scopes: ANTHROPIC_SCOPES, callbackPath: '/callback', callbackPort: this.#options.callbackPort, timeoutMs: this.#options.timeoutMs, fetch: this.#options.fetch, tokenFormat: 'json', tokenState: true, stateFromVerifier: true, authorizationParams: { code: 'true' }, parseToken: parseOAuthToken }, context);
+  constructor(_options: AnthropicAuthOptions = {}) {}
+  methods(): readonly AuthMethod[] { return []; }
+  async login(_method: AuthMethod, _context: AuthContext): Promise<OAuthCredential> {
+    throw new MarsError('ConfigurationError', 'Anthropic subscription login is disabled in MARS. Use an Anthropic API key.');
   }
   async refresh(credential: OAuthCredential, context: AuthContext): Promise<OAuthCredential> {
-    if (credential.provider !== this.id || !credential.refreshToken) throw new MarsError('AuthenticationError', 'No refresh token is available.');
-    const value = await requestJson(this.#options.fetch ?? fetch, this.#options.tokenEndpoint, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify({ grant_type: 'refresh_token', client_id: this.#options.clientId, refresh_token: credential.refreshToken }) }, context.signal);
-    return parseOAuthToken(value, this.id, credential.refreshToken);
+    throw new MarsError('AuthenticationError', 'Anthropic subscription credentials are not supported. Use an Anthropic API key.');
   }
   async logout(): Promise<void> {}
   async status(credential: Credential | undefined): Promise<AuthStatus> { return authStatus(credential, this.id, 'oauth-pkce'); }

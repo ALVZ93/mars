@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { lstat, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FakeProvider, FileEvidenceStore, FileSessionStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
-import type { CredentialStore, RouteDecision, VerificationReport } from '../../../../packages/sdk/src/internal.js';
+import { FakeProvider, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
+import type { CredentialStore, RouteDecision, VerificationReport, RunReport } from '../../../../packages/sdk/src/internal.js';
 import { providerAuthCatalog } from '../../../../packages/auth/src/index.js';
 import { showMarsBoot } from '../visual.js';
 import { choose } from '../terminal.js';
@@ -9,20 +10,48 @@ import { approval, createSessionMars } from '../session.js';
 import { authProvider, authenticatedProviders, loginCommand } from './auth.js';
 import { prompt, safe, targetParts, workspaceRoot } from '../utils/common.js';
 export async function runTask(target: string, root: string, values: Record<string, unknown>, credentials: CredentialStore, task: string, sessionId?: string, route?: RouteDecision): Promise<void> {
+  const reportPath = typeof values.report === 'string' ? await (await Workspace.open(root)).resolve(values.report) : undefined;
+  if (reportPath) {
+    try { await lstat(reportPath); throw new MarsError('ConfigurationError', 'Report destination already exists. Choose a new file.'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
   const { mars, eventLog, roleTargets } = await createSessionMars(target, root, values, credentials, sessionId);
   if (route) process.stderr.write(`[route] ${route.role} → ${route.target} (${route.reason})\n`);
   if (roleTargets.length) process.stderr.write(`[workflow routing] ${roleTargets.join(' · ')}\n`);
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once('SIGINT', cancel);
+  const runs: RunReport[] = [];
+  const capture = async <T>(operation: () => Promise<T>) => {
+    try { return await operation(); } finally { const report = mars.lastRun; if (report) runs.push(report); }
+  };
+  let failure: unknown;
   try {
     if (process.stdout.isTTY && values['no-animation'] !== true) process.stdout.write('\n');
     await showMarsBoot(controller.signal, values['no-animation'] !== true);
-    if (typeof values.workflow === 'string') await mars.runWorkflow(values.workflow, task, controller.signal);
-    else await mars.run(task, controller.signal);
-    if (values.verify === true) renderCheckReport(await mars.verify(controller.signal));
+    if (typeof values.workflow === 'string') await capture(() => mars.runWorkflow(values.workflow as string, task, controller.signal));
+    else await capture(() => mars.run(task, controller.signal));
+    if (values.verify === true) renderCheckReport(await capture(() => mars.verify(controller.signal)));
     process.stderr.write(`\n[session] ${mars.id}\n`);
-  } finally { process.off('SIGINT', cancel); await mars.close(); await eventLog?.flush(); process.stdout.write('\n'); }
+  } catch (error) { failure = error; }
+  finally {
+    process.off('SIGINT', cancel);
+    try { await mars.close(); } catch (error) { failure ??= error; }
+    try { await eventLog?.flush(); } catch (error) { failure ??= error; }
+    if (reportPath) {
+      try {
+        await (await Workspace.open(root)).resolve(values.report as string);
+        await mkdir(path.dirname(reportPath), { recursive: true });
+        await writeFile(reportPath, `${JSON.stringify({ schemaVersion: 1, sessionId: mars.id, runs }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        process.stderr.write(`[report] ${safe(reportPath)}\n`);
+      } catch (error) {
+        process.stderr.write('Could not export the run report.\n');
+        failure ??= new MarsError('ConfigurationError', 'Could not export the run report.');
+      }
+    }
+    process.stdout.write('\n');
+  }
+  if (failure) throw failure;
 }
 
 export async function modelsCommand(json = false): Promise<void> {
@@ -56,7 +85,7 @@ export async function configCommand(positionals: string[], root: string): Promis
   if (action === 'path') { process.stdout.write(`${loaded.paths.project}\n`); return; }
   if (action === 'set' && positionals.length >= 4) {
     const key = positionals[2]!;
-    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'mcp.servers']);
+    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'verification.maxRepairAttempts', 'mcp.servers', 'knowledge.enabled']);
     if (!allowed.has(key)) throw new MarsError('ConfigurationError', `Unknown config key: ${key}`);
     const raw = positionals.slice(3).join(' ');
     let value: unknown = raw;
@@ -82,7 +111,7 @@ export async function sessionsCommand(root: string, json = false): Promise<void>
   for (const session of sessions) process.stdout.write(`${session.id}  ${session.status ?? 'active'}  ${session.model}  ${session.updatedAt}  ${safe(session.lastMessage ?? '')}\n`);
 }
 export function renderCheckReport(report: VerificationReport, json = false): void {
-  if (json) { process.stdout.write(`${JSON.stringify(report, null, 2)}\n`); return; }
+  if (json) { process.stdout.write(`${JSON.stringify(report, null, 2)}\n`); if (!report.verified) process.exitCode = 1; return; }
   if (report.reason) process.stdout.write(`${report.reason}\n`);
   for (const check of report.checks) process.stdout.write(`${check.passed ? '✓' : '✕'} ${check.command}\n${safe(check.output)}\n`);
   process.stdout.write(report.verified ? 'Verification passed.\n' : 'Verification failed.\n');
@@ -100,8 +129,10 @@ export async function checkCommand(root: string, values: Record<string, unknown>
   const report = await runProjectChecks(workspace, new AbortController().signal, { timeoutMs: loaded.config.limits.timeoutMs, shellExecutor, permissions, commands: loaded.config.verification.commands });
   renderCheckReport(report, json);
 }
-export async function skillsCommand(root: string): Promise<void> {
-  const skills = await new SkillRegistry(root).list();
+export async function skillsCommand(root: string, json = false): Promise<void> {
+  const approved = (await new FileKnowledgeStore(root).load()).entries.filter(entry => entry.kind === 'skill' && entry.status === 'approved');
+  const skills = await new SkillRegistry(root, undefined, approved.map(entry => ({ name: entry.name, content: entry.content, scope: 'project', path: `${root}/.mars/knowledge.json#${entry.id}` }))).list();
+  if (json) { process.stdout.write(`${JSON.stringify(skills, null, 2)}\n`); return; }
   if (!skills.length) { process.stdout.write('No MARS skills found.\n'); return; }
   for (const skill of skills) process.stdout.write(`${skill.scope}\t${skill.name}\t${skill.path}\n`);
 }
@@ -174,7 +205,10 @@ export async function selectModel(root: string, credentials: CredentialStore, pr
   const provider = providers[providerIndex]!;
   if (!connected.has(provider) && !['fake', 'ollama'].includes(provider)) {
     const info = providerAuthCatalog.find(entry => entry.id === provider);
-    const methods = info?.apiKey && authProvider(provider) ? ['Navegador / suscripción', 'API key'] : [authProvider(provider) ? 'Navegador / suscripción' : 'API key'];
+    const browserAvailable = Boolean(authProvider(provider)?.methods().length)
+      && (provider !== 'kimi-code' || process.env.MARS_ENABLE_EXPERIMENTAL_SUBSCRIPTION_AUTH === '1')
+      && (provider !== 'gemini' || Boolean(process.env.MARS_GEMINI_CLIENT_ID));
+    const methods = info?.apiKey && browserAvailable ? ['Navegador / suscripción', 'API key'] : [browserAvailable ? 'Navegador / suscripción' : 'API key'];
     const method = await choose('Autenticación', methods, ask, write);
     await loginCommand(provider, { 'api-key': methods[method] === 'API key' }, credentials);
   }

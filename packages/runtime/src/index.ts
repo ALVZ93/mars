@@ -1,6 +1,6 @@
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { MarsError } from '../../core/src/index.js';
+import { MarsError, checkAbort } from '../../core/src/index.js';
 import type { AgentMessage, ModelDescriptor } from '../../core/src/index.js';
 
 export class Workspace {
@@ -25,7 +25,7 @@ export class Workspace {
       if (part.includes(':') || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part)) {
         throw new MarsError('WorkspaceViolationError', 'Ambiguous or reserved path.');
       }
-      if (/^(\.env(?:\..*)?|\.ssh|\.aws|\.azure|\.config|\.git|\.mars|\.mars|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(pem|key|p12|pfx))$/i.test(part)) {
+      if (/^(\.env(?:\..*)?|\.ssh|\.aws|\.azure|\.config|\.git|\.mars|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(pem|key|p12|pfx))$/i.test(part)) {
         throw new MarsError('PermissionDeniedError', 'Sensitive path is blocked.');
       }
       current = path.join(current, part);
@@ -112,10 +112,12 @@ export class Permissions {
     return kind === 'filesystem.read' || kind === 'filesystem.write' ? 'allow' : 'ask';
   }
   async check(kind: PermissionKind, target: string, signal: AbortSignal): Promise<void> {
+    checkAbort(signal);
     const policy = this.policy(kind);
     if (policy === 'allow') { this.emit?.({ type: 'permission:granted', permission: kind, target }); return; }
     this.emit?.({ type: 'permission:requested', permission: kind, target });
     if (policy === 'ask' && this.approve && await this.approve(target, process.cwd(), signal)) {
+      checkAbort(signal);
       this.emit?.({ type: 'permission:granted', permission: kind, target });
       return;
     }
@@ -123,15 +125,25 @@ export class Permissions {
     throw new MarsError('PermissionDeniedError', `${kind} was not approved.`);
   }
   async checkGit(operation: 'commit' | 'push', target: string, cwd: string, signal: AbortSignal): Promise<void> {
+    checkAbort(signal);
     const kind: PermissionKind = operation === 'push' ? 'git.push' : 'git.commit';
     const policy = this.policy(kind);
     if (policy === 'allow') { this.emit?.({ type: 'permission:granted', permission: kind, target }); return; }
     this.emit?.({ type: 'permission:requested', permission: kind, target });
-    if (policy === 'ask' && this.approve && await this.approve(target, cwd, signal)) { this.emit?.({ type: 'permission:granted', permission: kind, target }); return; }
+    if (policy === 'ask' && this.approve && await this.approve(target, cwd, signal)) { checkAbort(signal); this.emit?.({ type: 'permission:granted', permission: kind, target }); return; }
     this.emit?.({ type: 'permission:denied', permission: kind, target });
     throw new MarsError('PermissionDeniedError', `${kind} was not approved.`);
   }
   async checkShell(command: string, cwd: string, signal: AbortSignal): Promise<void> {
+    checkAbort(signal);
+    if (this.shell === 'deny') {
+      this.emit?.({ type: 'permission:denied', permission: 'shell.execute', target: command });
+      throw new MarsError('PermissionDeniedError', 'Shell execution was not approved.');
+    }
+    // Classification adds gates for recognizable commands; arbitrary host code still requires trust.
+    for (const operation of ['commit', 'push'] as const) {
+      if (new RegExp(`\\bgit(?:\\.exe)?\\b[^\\r\\n;|&]*\\b${operation}\\b`, 'i').test(command)) await this.checkGit(operation, command, cwd, signal);
+    }
     let approved = false;
     if (isDestructiveShell(command)) {
       if (this.destructiveShell === 'deny') {
@@ -157,9 +169,11 @@ export class Permissions {
       }
       this.emit?.({ type: 'permission:granted', permission: 'network.access', target: command });
     }
+    checkAbort(signal);
     if (this.shell === 'allow') { this.emit?.({ type: 'permission:granted', permission: 'shell.execute', target: command }); return; }
     this.emit?.({ type: 'permission:requested', permission: 'shell.execute', target: command });
     if (this.shell === 'ask' && (approved || (this.approve && await this.approve(command, cwd, signal)))) {
+      checkAbort(signal);
       this.emit?.({ type: 'permission:granted', permission: 'shell.execute', target: command });
       return;
     }
@@ -171,9 +185,10 @@ export class Permissions {
 export { Permissions as PermissionEngine };
 
 export { loadConfig, saveConfig, mergeConfig, defaultConfigPath, projectConfigPath, type MarsConfig, type McpServerConfig, type ConfigPaths, type ConfigPatch } from './config.js';
-export { FileSessionStore, defaultSessionDirectory, type Session, type SessionStore, type SessionSummary } from './sessions.js';
+export { FileSessionStore, defaultSessionDirectory, type Session, type SessionStore, type SessionSummary, type SessionRunReceipt } from './sessions.js';
 export { buildProjectContext, discoverProjectFiles, SkillRegistry, type ProjectContext, type ContextOptions, type Skill } from './context.js';
 export { MODEL_CATALOG, ModelRegistry, routeTask, classifyTask, type RouteOptions, type RouteDecision, type TaskRole } from './routing.js';
 export { BUILTIN_WORKFLOWS, WorkflowRegistry, selectWorkflow, type WorkflowDefinition, type WorkflowPhase } from './workflows.js';
 export { FileEvidenceStore, evidencePath, type EvidenceRun, type EvidenceSnapshot, type EvidenceStore, type EvidenceSuggestion, type SkillEvidence, type WorkflowEvidence } from './evidence.js';
 export { FileEventLog, ProviderHealthTracker, eventLogPath, readEventLog, readEventLogEntries, type EventLogEntry, type FileEventLogOptions, type ProviderHealth } from './observability.js';
+export { FileKnowledgeStore, memoryData, redactKnowledgeSecrets, type KnowledgeStore, type KnowledgeSnapshot, type KnowledgeEntry, type KnowledgeProposal, type KnowledgeSource, type KnowledgeKind } from './knowledge.js';

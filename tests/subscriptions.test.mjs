@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -51,34 +50,14 @@ test('OpenAI Codex login delegates credentials to the official runtime', async (
   assert.deepEqual(calls, [{ args: ['login', 'status'], inherit: false }]);
 });
 
-test('Anthropic browser login includes OAuth state in the JSON token exchange', async t => {
-  let tokenBody;
-  const server = createServer(async (request, response) => {
-    if (request.url === '/token') {
-      let body = '';
-      for await (const chunk of request) body += chunk;
-      tokenBody = JSON.parse(body);
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ access_token: 'sk-ant-oat-test', refresh_token: 'refresh', expires_in: 3600 }));
-      return;
-    }
-    response.writeHead(404).end();
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => server.close());
-  const address = server.address();
-  const base = `http://127.0.0.1:${address.port}`;
-  const provider = new AnthropicAuthProvider({ clientId: 'anthropic-test', authorizationEndpoint: `${base}/authorize`, tokenEndpoint: `${base}/token`, callbackPort: 0 });
-  const credential = await provider.login('oauth-pkce', { signal: signal(), openUrl: async url => {
-    const auth = new URL(url);
-    const callback = new URL(auth.searchParams.get('redirect_uri'));
-    callback.searchParams.set('state', auth.searchParams.get('state'));
-    callback.searchParams.set('code', 'code-2');
-    await fetch(callback);
-  } });
-  assert.equal(credential.accessToken, 'sk-ant-oat-test');
-  assert.equal(tokenBody.state, tokenBody.code_verifier);
-  assert.equal(tokenBody.code, 'code-2');
+test('Anthropic browser login is blocked at the adapter boundary', async () => {
+  let requests = 0;
+  const provider = new AnthropicAuthProvider({ clientId: 'fixture', fetch: async () => { requests++; } });
+  const context = { signal: signal(), openUrl: async () => { requests++; } };
+  await assert.rejects(provider.login('oauth-pkce', context), { code: 'ConfigurationError' });
+  await assert.rejects(provider.refresh({ provider: 'anthropic', kind: 'oauth', accessToken: 'fixture', refreshToken: 'fixture' }, context), { code: 'AuthenticationError' });
+  assert.equal(requests, 0);
+  assert.deepEqual(provider.methods(), []);
 });
 
 test('Kimi Code device login opens the verification URL and polls RFC 8628', async () => {
@@ -202,11 +181,13 @@ test('Gemini transport maps tools to function declarations and parses function c
     assert.match(url, /models\/test-model:streamGenerateContent/);
     assert.equal(new Headers(options.headers).get('x-goog-api-key'), 'gemini-secret');
     body = JSON.parse(options.body);
-    return sse([{ candidates: [{ content: { parts: [{ text: 'ok' }, { functionCall: { name: 'read_file', args: { path: 'package.json' } } }] } }] }]);
+    return sse([{ candidates: [{ content: { parts: [{ text: 'ok' }, { functionCall: { name: 'read_file', args: { path: 'package.json' } } }] }, finishReason: 'STOP' }] }]);
   } });
   const events = await collect(provider);
   assert.equal(events.at(-1).message.content, 'ok');
-  assert.deepEqual(events.at(-1).message.toolCalls[0], { id: 'read_file-1', name: 'read_file', arguments: { path: 'package.json' } });
+  assert.equal(typeof events.at(-1).message.toolCalls[0].id, 'string');
+  assert.equal(events.at(-1).message.toolCalls[0].name, 'read_file');
+  assert.deepEqual(events.at(-1).message.toolCalls[0].arguments, { path: 'package.json' });
   assert.equal(body.tools[0].functionDeclarations[0].name, 'read_file');
 });
 

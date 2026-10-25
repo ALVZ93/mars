@@ -102,7 +102,7 @@ export function workspaceTools(workspace: Workspace, permissions: Permissions, o
       const root = await workspace.resolve(input ?? '.');
       await permissions.check('filesystem.read', root, signal);
       if (!(await lstat(root)).isDirectory()) throw new MarsError('WorkspaceViolationError', 'Search path must be a directory.');
-      return searchFiles(root, query, caseSensitive ?? false, maxResults ?? 100, signal, workspace.root);
+      return searchFiles(root, query, caseSensitive ?? false, maxResults ?? 100, signal, workspace);
     }),
     defineTool('git', 'Inspect repository state with read-only Git operations: status, diff, log or branch.', z.strictObject({ action: z.enum(['status', 'diff', 'log', 'branch']), path: filePath.nullable() }), async ({ action, path: input }, { signal }) => {
       const relative = input ?? undefined;
@@ -117,7 +117,7 @@ const SKIP_DIRECTORIES = new Set(['.git', '.hg', '.svn', '.mars', 'node_modules'
 const SENSITIVE_NAME = /^(?:\.env(?:\..*)?|credentials(?:\..*)?|.*\.(?:pem|key|p12|pfx)|id_(?:rsa|ed25519))$/i;
 const MAX_SEARCH_FILES = 10_000;
 
-async function searchFiles(root: string, query: string, caseSensitive: boolean, maxResults: number, signal: AbortSignal, workspaceRoot: string): Promise<string> {
+async function searchFiles(root: string, query: string, caseSensitive: boolean, maxResults: number, signal: AbortSignal, workspace: Workspace): Promise<string> {
   const needle = caseSensitive ? query : query.toLocaleLowerCase();
   const results: string[] = [];
   let visited = 0;
@@ -129,8 +129,9 @@ async function searchFiles(root: string, query: string, caseSensitive: boolean, 
     for (const entry of entries) {
       checkAbort(signal);
       if (results.length >= maxResults || visited >= MAX_SEARCH_FILES) return;
-      if (entry.name === '.' || entry.name === '..' || SKIP_DIRECTORIES.has(entry.name)) continue;
+      if (entry.name === '.' || entry.name === '..' || SKIP_DIRECTORIES.has(entry.name.toLowerCase())) continue;
       const full = path.join(directory, entry.name);
+      try { await workspace.resolve(full); } catch { continue; }
       if (entry.isDirectory()) { await walk(full); continue; }
       if (!entry.isFile() || SENSITIVE_NAME.test(entry.name)) continue;
       visited++;
@@ -138,7 +139,15 @@ async function searchFiles(root: string, query: string, caseSensitive: boolean, 
       try {
         const fileStat = await lstat(full);
         if (!fileStat.isFile() || fileStat.nlink > 1 || fileStat.size > 2_000_000) continue;
-        const bytes = await readFile(full);
+        const handle = await open(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+        let bytes: Buffer;
+        try {
+          const actual = await handle.stat();
+          if (!actual.isFile() || actual.nlink > 1 || actual.size > 2_000_000) continue;
+          const buffer = Buffer.alloc(Math.min(actual.size + 1, 2_000_001));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          bytes = buffer.subarray(0, bytesRead);
+        } finally { await handle.close(); }
         if (bytes.includes(0)) continue;
         content = bytes.toString('utf8');
       } catch { continue; }
@@ -147,7 +156,7 @@ async function searchFiles(root: string, query: string, caseSensitive: boolean, 
         const line = lines[index]!;
         const haystack = caseSensitive ? line : line.toLocaleLowerCase();
         if (!haystack.includes(needle)) continue;
-        const relative = path.relative(workspaceRoot, full).split(path.sep).join('/');
+        const relative = path.relative(workspace.root, full).split(path.sep).join('/');
         results.push(`${relative}:${index + 1}: ${line.slice(0, 500)}`);
       }
     }
@@ -158,18 +167,22 @@ async function searchFiles(root: string, query: string, caseSensitive: boolean, 
 }
 
 async function executeGit(action: 'status' | 'diff' | 'log' | 'branch', relativePath: string | undefined, cwd: string, signal: AbortSignal): Promise<string> {
-  const args: string[] = ['--no-pager'];
+  const args: string[] = ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false'];
   if (action === 'status') args.push('status', '--short', '--branch');
-  if (action === 'diff') args.push('diff', '--no-ext-diff', '--no-color');
+  if (action === 'diff') args.push('diff', '--no-ext-diff', '--no-textconv', '--no-color');
   if (action === 'log') args.push('log', '-8', '--oneline', '--decorate');
   if (action === 'branch') args.push('branch', '--show-current');
-  if (relativePath && action === 'diff') args.push('--', relativePath);
+  if (action === 'diff') {
+    args.push('--', relativePath ?? '.');
+    for (const name of ['.env', '.env.*', 'credentials', 'credentials.*', 'id_rsa', 'id_ed25519', '*.pem', '*.key', '*.p12', '*.pfx']) args.push(`:(glob,icase,exclude)**/${name}`);
+    for (const name of ['.ssh', '.aws', '.azure', '.config', '.git', '.mars']) args.push(`:(glob,icase,exclude)**/${name}/**`);
+  }
   const output = await executeProcess('git', args, cwd, 30_000, signal, true);
   return output;
 }
 
-interface VerificationResult { name: string; command: string; exitCode: number | null; passed: boolean; output: string }
-export interface VerificationReport { workspace: string; checks: VerificationResult[]; passed: boolean; verified: boolean; reason?: string }
+interface VerificationResult { name: string; command: string; exitCode: number | null; passed: boolean; output: string; error?: import('../../core/src/index.js').ErrorCode }
+export interface VerificationReport { workspace: string; plannedCommands: string[]; checks: VerificationResult[]; passed: boolean; verified: boolean; reason?: string }
 export interface VerificationOptions {
   timeoutMs?: number;
   shellExecutor?: ShellExecutor;
@@ -185,10 +198,10 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
   if (configured.length) configured.forEach((command, index) => planned.push({ name: `configured-${index + 1}`, command }));
   else {
     try { packageJson = JSON.parse(await readFile(path.join(workspace.root, 'package.json'), 'utf8')) as typeof packageJson; }
-    catch { return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No verification commands configured and no readable package.json found.' }; }
+    catch { return { workspace: workspace.root, plannedCommands: [], checks: [], passed: false, verified: false, reason: 'No verification commands configured and no readable package.json found.' }; }
     const scripts = packageJson.scripts ?? {};
     const names = ['typecheck', 'test', 'lint', 'build'].filter(name => typeof scripts[name] === 'string');
-    if (!names.length) return { workspace: workspace.root, checks: [], passed: false, verified: false, reason: 'No configured or standard verification commands found.' };
+    if (!names.length) return { workspace: workspace.root, plannedCommands: [], checks: [], passed: false, verified: false, reason: 'No configured or standard verification commands found.' };
     const declaredManager = packageJson.packageManager?.split('@')[0];
     const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(workspace.root);
     names.forEach(name => planned.push({ name, command: `${packageManager} run ${name}` }));
@@ -201,21 +214,25 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
     let output = '';
     let exitCode: number | null = null;
     let passed = false;
+    let failure: import('../../core/src/index.js').ErrorCode | undefined;
     try {
       await options.permissions?.checkShell(command, workspace.root, signal);
       const execution = await shellExecutor(command, workspace.root, timeout, signal);
+      checkAbort(signal);
       exitCode = execution.exitCode;
       output = formatShellExecution(execution);
       passed = exitCode === 0;
     } catch (error) {
+      checkAbort(signal);
       output = error instanceof MarsError ? `${error.code}: ${error.message}` : 'Verification command failed.';
+      failure = error instanceof MarsError ? error.code : 'ToolExecutionError';
       passed = false;
     }
-    checks.push({ name, command, exitCode, passed, output: truncate(output) });
+    checks.push({ name, command, exitCode, passed, output: truncate(output), ...(failure ? { error: failure } : {}) });
     if (!passed) break;
   }
   const passed = checks.length === planned.length && checks.every(check => check.passed);
-  return { workspace: workspace.root, checks, passed, verified: passed && checks.length > 0 };
+  return { workspace: workspace.root, plannedCommands: planned.map(check => check.command), checks, passed, verified: passed && checks.length > 0 };
 }
 
 async function detectPackageManager(root: string): Promise<'pnpm' | 'npm' | 'yarn' | 'bun'> {

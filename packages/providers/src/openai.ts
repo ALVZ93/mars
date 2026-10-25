@@ -21,6 +21,20 @@ export interface OpenAICompatibleProviderOptions {
   providerId?: string;
 }
 
+function strictSchema(schema: unknown): boolean {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return false;
+  const value = schema as Record<string, unknown>;
+  if (value.type === 'object') {
+    const properties = value.properties as Record<string, unknown> | undefined;
+    const required = Array.isArray(value.required) ? value.required : [];
+    if (value.additionalProperties !== false || Object.keys(properties ?? {}).some(key => !required.includes(key))) return false;
+    if (Object.values(properties ?? {}).some(property => !strictSchema(property))) return false;
+  }
+  if (value.items && !strictSchema(value.items)) return false;
+  for (const key of ['anyOf', 'oneOf', 'allOf']) if (Array.isArray(value[key]) && value[key].some(item => !strictSchema(item))) return false;
+  return true;
+}
+
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   #client: OpenAI;
@@ -38,7 +52,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       stream = await this.#client.chat.completions.create({
         model: request.model,
         messages: toOpenAIMessages(request.messages),
-        tools: request.tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters, strict: true } })),
+        tools: request.tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters, strict: strictSchema(tool.parameters) } })),
         stream: true,
         stream_options: { include_usage: true },
         store: false,

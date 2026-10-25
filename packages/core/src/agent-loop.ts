@@ -30,7 +30,9 @@ function retryable(error: unknown): error is MarsError {
 }
 
 async function waitForRetry(milliseconds: number, signal: AbortSignal): Promise<void> {
-  await abortable(new Promise<void>(resolve => setTimeout(resolve, milliseconds)), signal);
+  let timer: NodeJS.Timeout | undefined;
+  try { await abortable(new Promise<void>(resolve => { timer = setTimeout(resolve, milliseconds); }), signal); }
+  finally { clearTimeout(timer); }
 }
 
 export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
@@ -126,6 +128,7 @@ export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
         if (result.error) emit({ type: 'tool:error', callId: call.id, tool: call.name, error: result.error });
       }
       emit({ type: 'turn:end', turn });
+      options.onCheckpoint?.(structuredClone(messages));
       if (!response.toolCalls.length) return messages;
     }
     throw new MarsError('LimitError', `Turn limit reached (${maxTurns}). Continue with a new message or raise limits.maxTurns.`);
