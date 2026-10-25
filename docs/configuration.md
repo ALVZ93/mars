@@ -111,11 +111,11 @@ mars run "Corrige la regresión" --workflow bugfix --repair-attempts 2 --budget-
 mars run "Añade la validación" --isolate
 mars runs                     # lista ejecuciones aisladas
 mars runs diff ID [--stat]    # diff exacto del agente
-mars runs apply ID [--3way]   # aplica al árbol de trabajo, sin tocar el índice
+mars runs apply ID            # aplica al árbol de trabajo, sin tocar el índice
 mars runs discard ID          # elimina worktree y refs
 ```
 
-Requiere Git con al menos un commit. `node_modules` se enlaza al worktree para que los checks funcionen. `mars resume ID` reabre el mismo worktree. Detalles en [ADR 007](decisions/007-isolated-runs-and-task-budget.md).
+Requiere Git con al menos un commit; no admite submódulos ni `--sandbox docker` por ahora. `node_modules` se enlaza al worktree para que los checks funcionen. `mars resume ID` reabre el mismo worktree. Detalles en [ADR 007](decisions/007-isolated-runs-and-task-budget.md).
 
 ## Instrucciones y skills
 

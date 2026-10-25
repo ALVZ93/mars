@@ -27,7 +27,7 @@ mars learn SESSION_ID                 Capture a local procedure draft from verif
 mars evidence                         Show local skill/workflow evidence
 mars health                           Show last-known provider health
 mars logout PROVIDER                   Disconnect a provider
-mars runs [list|diff|apply|discard ID] Review and apply isolated runs (--stat, --3way)
+mars runs [list|diff|apply|discard ID] Review and apply isolated runs (--stat)
 
 Authentication:
   mars login openai --api-key

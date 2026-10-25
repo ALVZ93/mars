@@ -17,7 +17,7 @@ export async function runsCommand(root: string, positionals: string[], values: R
     return;
   }
   if (action === 'apply') {
-    const files = await applyIsolatedRun(root, id, { threeWay: values['3way'] === true });
+    const files = await applyIsolatedRun(root, id);
     if (json) { process.stdout.write(`${JSON.stringify({ id, applied: files }, null, 2)}\n`); return; }
     process.stdout.write(files.length ? `Applied ${files.length} file(s) from ${id}:\n${files.map(file => `  ${safe(file)}`).join('\n')}\nReview with git diff. Remove the run with: mars runs discard ${id}\n` : 'No changes to apply.\n');
     return;

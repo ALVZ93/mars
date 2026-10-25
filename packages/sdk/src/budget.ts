@@ -56,6 +56,9 @@ export class TaskBudget {
 
   dispose(): void { clearTimeout(this.#timer); }
 
+  /** Fails an operation that finished after its budget ran out, so it never records success. */
+  assertWithin(): void { if (this.#exceeded) throw this.#error(); }
+
   /** Converts the abort caused by an exhausted budget into a stable, non-retryable error. */
   translate(error: unknown): unknown {
     if (!this.#exceeded) return error;
@@ -73,12 +76,15 @@ export class TaskBudget {
       async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
         budget.#before();
         budget.#requests++;
-        for await (const event of inner.stream(request, signal)) {
-          if (event.type === 'done') {
-            if (event.usage) budget.#tokens += event.usage.inputTokens + event.usage.outputTokens;
-            else budget.#tokensKnown = false;
+        let reported = false;
+        try {
+          for await (const event of inner.stream(request, signal)) {
+            if (event.type === 'done' && event.usage) { budget.#tokens += event.usage.inputTokens + event.usage.outputTokens; reported = true; }
+            yield event;
           }
-          yield event;
+        } finally {
+          // Failed, cancelled or unmetered attempts may still have consumed tokens.
+          if (!reported) budget.#tokensKnown = false;
         }
       },
     };

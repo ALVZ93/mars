@@ -31,11 +31,21 @@ Un presupuesto por operación (`run`, `runWorkflow`, `verify`) compartido por to
 3. Tools, shell y checks operan en el worktree. Sesiones, eventos, evidencia y conocimiento siguen en el workspace original.
 4. Al terminar cada operación MARS captura el resultado como commit y actualiza `refs/mars/runs/<id>/base` y `refs/mars/runs/<id>/result`. El diff `base..result` es exclusivamente trabajo del agente.
 5. Comandos: `mars runs`, `mars diff ID`, `mars apply ID`, `mars discard ID`.
-   - `apply` comprueba primero con `git apply --check` y solo entonces aplica el diff al árbol de trabajo, sin tocar el índice. Si no aplica limpiamente no cambia nada; `--3way` es opt-in y deja marcadores de conflicto. Nunca hay rollback destructivo.
+   - `apply` comprueba primero con `git apply --check` y solo entonces aplica el diff al árbol de trabajo, sin tocar el índice. Si no aplica limpiamente no cambia nada. No hay modo `--3way`: Git lo implementa sobre el índice del usuario; queda pendiente un merge con índice temporal. Nunca hay rollback destructivo.
    - `discard` elimina worktree y refs. Nunca toca el árbol del usuario.
-6. Reanudar una sesión aislada reutiliza su worktree si existe.
+6. La sesión persiste `metadata.isolation`. Reanudarla reutiliza su worktree sin necesidad de `--isolate`; si el run se descartó o se pide `isolation: 'none'`, falla en lugar de escribir en el árbol del usuario.
+7. Los servidores MCP cuyo `cwd` está dentro del workspace arrancan en la ruta equivalente del worktree.
 
-Requiere un repositorio Git con al menos un commit. Sin Git, `--isolate` falla con un error de configuración; no hay degradación silenciosa.
+Requiere un repositorio Git con al menos un commit. Sin Git, `--isolate` falla con un error de configuración; no hay degradación silenciosa. Se rechazan explícitamente, hasta soportarlos: repositorios con submódulos (su contenido no se captura ni se restaura) y el sandbox Docker (el contenedor no vería los metadatos Git ni las dependencias enlazadas).
+
+### Operaciones Git propias de MARS
+
+Revisión de Codex sobre `52ae11e`; cada punto tiene test en `tests/isolation.test.mjs`.
+
+- `core.hooksPath` apunta a un directorio vacío y privado fuera de cualquier repositorio: nada que escriba el agente se convierte en hook (p. ej. `reference-transaction` al actualizar refs).
+- Los snapshots del worktree leen atributos del commit base (`GIT_ATTR_SOURCE`): un `.gitattributes` escrito por el agente no activa filtros `clean`. Los filtros configurados por el usuario (p. ej. LFS) siguen siendo de confianza, igual que en su uso normal de Git.
+- `diff.noprefix`, `diff.mnemonicPrefix`, `diff.relative` y `apply.whitespace` se fijan por línea de comandos; el diff usa prefijos `a/`/`b/` explícitos y `apply -p1`.
+- El presupuesto se vuelve a comprobar tras persistir y capturar el resultado: una operación que termina fuera de presupuesto nunca deja un recibo de éxito. Un intento sin uso comunicado, incluido uno fallido, marca `tokensKnown: false`.
 
 ## Consecuencias
 

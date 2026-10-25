@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createMars } from '../dist/packages/sdk/src/index.js';
-import { FakeProvider, applyIsolatedRun, discardIsolatedRun, isolatedDiff, isolatedRunExists, listIsolatedRuns, mergeConfig, loadConfig, saveConfig, projectConfigPath } from '../dist/packages/sdk/src/internal.js';
+import { FakeProvider, FileSessionStore, applyIsolatedRun, discardIsolatedRun, isolatedDiff, isolatedRunExists, listIsolatedRuns, mergeConfig, loadConfig, saveConfig, projectConfigPath } from '../dist/packages/sdk/src/internal.js';
 
 const answer = (content = 'done') => ({ role: 'assistant', content, toolCalls: [] });
 const write = (file, content, id = `write-${file}-${content.length}`) => ({ role: 'assistant', content: '', toolCalls: [{ id, name: 'write_file', arguments: { path: file, content } }] });
@@ -162,4 +162,105 @@ test('isolation: requires a Git repository with a commit and rejects unsafe run 
   await assert.rejects(createMars({ workspace: empty, provider: new FakeProvider(), model: 'm', isolation: 'worktree' }), { code: 'ConfigurationError' });
   const root = await repo(t);
   await assert.rejects(createMars({ workspace: root, provider: new FakeProvider(), model: 'm', isolation: 'worktree', sessionId: '../escape' }), { code: 'ConfigurationError' });
+});
+
+// Regressions from the Codex review of phase A.
+test('isolation: repository hooks and agent-written attributes never run during MARS git operations', async t => {
+  const root = await repo(t);
+  const outside = await fixture(t);
+  const marker = path.join(outside, 'executed.txt').replaceAll('\\', '/');
+  await mkdir(path.join(root, 'hooks'));
+  await writeFile(path.join(root, 'hooks', 'reference-transaction'), `#!/bin/sh\necho hook >> "${marker}"\n`, { mode: 0o755 });
+  git(root, 'config', 'core.hooksPath', 'hooks');
+  git(root, 'config', 'filter.spy.clean', `node -e "require('fs').appendFileSync('${marker}','filter');process.stdin.pipe(process.stdout)"`);
+  const provider = new FakeProvider([
+    write('.mars-no-hooks/reference-transaction', `#!/bin/sh\necho agent >> "${marker}"\n`),
+    write('.gitattributes', '* filter=spy\n'),
+    answer(),
+  ]);
+  const mars = await createMars({ workspace: root, provider, model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionId: 'run-hooks' });
+  t.after(() => mars.close());
+  await mars.run('try to escalate');
+  assert.ok(mars.lastRun.isolation.files.includes('.gitattributes'));
+  await assert.rejects(lstat(marker), { code: 'ENOENT' });
+});
+
+test('isolation: apply ignores diff.noprefix and writes the right paths', async t => {
+  const root = await repo(t);
+  git(root, 'config', 'diff.noprefix', 'true');
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([write('packages/sdk/src/budget.ts', 'export {};\n'), answer()]), model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionId: 'run-prefix' });
+  t.after(() => mars.close());
+  await mars.run('add file');
+  assert.deepEqual(await applyIsolatedRun(root, 'run-prefix'), ['packages/sdk/src/budget.ts']);
+  assert.equal(await readFile(path.join(root, 'packages', 'sdk', 'src', 'budget.ts'), 'utf8'), 'export {};\n');
+  await assert.rejects(lstat(path.join(root, 'sdk')), { code: 'ENOENT' });
+});
+
+test('isolation: MCP servers start inside the worktree, not the user tree', async t => {
+  const root = await repo(t);
+  const scripts = await fixture(t);
+  const server = path.join(scripts, 'server.mjs');
+  await writeFile(server, [
+    "import { writeFileSync } from 'node:fs';",
+    "import { createInterface } from 'node:readline';",
+    "writeFileSync('mcp-marker.txt', process.cwd());",
+    "const send = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + String.fromCharCode(10));",
+    "createInterface({ input: process.stdin }).on('line', line => {",
+    "  const req = JSON.parse(line);",
+    "  if (req.method === 'initialize') send(req.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'cwd', version: '1' } });",
+    "  if (req.method === 'tools/list') send(req.id, { tools: [] });",
+    '});',
+  ].join('\n'));
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionId: 'run-mcp',
+    mcpServers: [{ name: 'cwd', command: process.execPath, args: [server], cwd: root, timeoutMs: 5000 }] });
+  // Close before fixture cleanup: Windows cannot remove a directory that is a live process's cwd.
+  try {
+    await assert.rejects(lstat(path.join(root, 'mcp-marker.txt')), { code: 'ENOENT' });
+    assert.ok(await readFile(path.join(mars.isolation.root, 'mcp-marker.txt'), 'utf8'));
+  } finally { await mars.close(); }
+});
+
+test('isolation: resumed sessions stay isolated and fail once the run was discarded', async t => {
+  const root = await repo(t);
+  const sessionStore = new FileSessionStore(path.join(root, '.mars', 'sessions'));
+  const first = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionStore });
+  await first.run('start');
+  await first.close();
+  const resumed = await createMars({ workspace: root, provider: new FakeProvider([write('later.txt', 'x\n'), answer()]), model: 'fake', includeProjectContext: false, sessionStore, sessionId: first.id });
+  await resumed.run('continue');
+  await resumed.close();
+  assert.equal(resumed.isolation.id, first.id);
+  await assert.rejects(lstat(path.join(root, 'later.txt')), { code: 'ENOENT' });
+  await assert.rejects(createMars({ workspace: root, provider: new FakeProvider(), model: 'fake', includeProjectContext: false, sessionStore, sessionId: first.id, isolation: 'none' }), { code: 'ConfigurationError' });
+  await discardIsolatedRun(root, first.id);
+  await assert.rejects(createMars({ workspace: root, provider: new FakeProvider(), model: 'fake', includeProjectContext: false, sessionStore, sessionId: first.id }), /discarded/);
+});
+
+test('isolation: rejects Docker sandbox and repositories with submodules', async t => {
+  const root = await repo(t);
+  await assert.rejects(createMars({ workspace: root, provider: new FakeProvider(), model: 'fake', isolation: 'worktree', sandbox: { mode: 'docker' } }), /Docker/);
+  git(root, 'update-index', '--add', '--cacheinfo', `160000,${git(root, 'rev-parse', 'HEAD')},vendor/lib`);
+  git(root, 'commit', '-qm', 'submodule');
+  await assert.rejects(createMars({ workspace: root, provider: new FakeProvider(), model: 'fake', isolation: 'worktree' }), /submodules/);
+});
+
+test('budget: an operation that outlives its budget during persistence is not recorded as success', async t => {
+  const root = await fixture(t);
+  const inner = new FileSessionStore(path.join(root, '.mars', 'sessions'));
+  const slowStore = { list: inner.list.bind(inner), get: inner.get.bind(inner), save: async session => { await new Promise(resolve => setTimeout(resolve, 60)); return inner.save(session); } };
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, sessionStore: slowStore, budget: { maxDurationMs: 20 } });
+  t.after(() => mars.close());
+  await assert.rejects(mars.run('quick'), { code: 'BudgetExceededError' });
+  assert.equal(mars.lastRun.status, 'failed');
+  assert.equal(mars.session.status, 'failed');
+  assert.equal(mars.session.lastRun.status, 'failed');
+});
+
+test('budget: a stream that fails after partial output leaves token usage unknown', async t => {
+  const root = await fixture(t);
+  const provider = { id: 'flaky', async *stream() { yield { type: 'text', text: 'partial' }; throw new Error('drop'); } };
+  const mars = await createMars({ workspace: root, provider, model: 'm', includeProjectContext: false, budget: { maxModelRequests: 5 } });
+  t.after(() => mars.close());
+  await assert.rejects(mars.run('task'));
+  assert.equal(mars.lastRun.budget.tokensKnown, false);
 });

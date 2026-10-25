@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, rm, rmdir, symlink, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { MarsError } from '../../core/src/index.js';
 
@@ -43,9 +44,14 @@ function gitEnvironment(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_AUTHOR_NAME: 'MARS', GIT_AUTHOR_EMAIL: 'mars@localhost', GIT_COMMITTER_NAME: 'MARS', GIT_COMMITTER_EMAIL: 'mars@localhost', ...extra };
 }
 
-/** Runs git without a shell. Hooks, fsmonitor and external diff helpers never run on MARS-owned operations. */
-function git(cwd: string, args: string[], options: { env?: Record<string, string>; input?: string; allowFailure?: boolean } = {}): Promise<GitResult> {
-  const safeArgs = ['-c', `core.hooksPath=${path.join(cwd, '.mars-no-hooks')}`, '-c', 'core.fsmonitor=false', '-c', 'core.autocrlf=false', ...args];
+// Private, empty hooks directory outside any repository: nothing the agent writes can become a hook.
+let noHooks: Promise<string> | undefined;
+const hooksDirectory = () => noHooks ??= mkdtemp(path.join(tmpdir(), 'mars-no-hooks-'));
+
+/** Runs git without a shell. Hooks, fsmonitor and diff/apply settings from config never affect MARS-owned operations. */
+async function git(cwd: string, args: string[], options: { env?: Record<string, string>; input?: string; allowFailure?: boolean } = {}): Promise<GitResult> {
+  const safeArgs = ['-c', `core.hooksPath=${await hooksDirectory()}`, '-c', 'core.fsmonitor=false', '-c', 'core.autocrlf=false',
+    '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', '-c', 'diff.relative=false', '-c', 'apply.whitespace=nowarn', ...args];
   return new Promise((resolve, reject) => {
     const child = spawn('git', safeArgs, { cwd, env: gitEnvironment(options.env), windowsHide: true, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -78,6 +84,8 @@ async function repository(source: string): Promise<{ top: string; common: string
   if (head.code !== 0) throw new MarsError('ConfigurationError', 'Isolated runs require at least one commit.');
   const top = (await git(source, ['rev-parse', '--show-toplevel'])).stdout.trim();
   const common = path.resolve(source, (await git(source, ['rev-parse', '--git-common-dir'])).stdout.trim());
+  // Submodule contents are neither snapshotted nor checked out; refuse instead of running on a different tree.
+  if (/^160000 /m.test((await git(top, ['ls-files', '--stage'])).stdout)) throw new MarsError('ConfigurationError', 'Isolated runs do not support repositories with submodules yet.');
   return { top: path.resolve(top), common };
 }
 
@@ -91,10 +99,11 @@ async function resolveRef(cwd: string, name: string): Promise<string | undefined
 }
 
 /** Commits the current tree of `cwd` on top of `parent` without touching the user's index, stash or branches. */
-async function snapshot(cwd: string, common: string, parent: string, message: string): Promise<string> {
+async function snapshot(cwd: string, common: string, parent: string, message: string, attributesFrom?: string): Promise<string> {
   await mkdir(marsDir(common), { recursive: true });
   const index = path.join(marsDir(common), `index-${randomUUID()}`);
-  const env = { GIT_INDEX_FILE: index };
+  // For agent-written trees, attributes (and so clean filters) come from the trusted base, never from the worktree.
+  const env = { GIT_INDEX_FILE: index, ...(attributesFrom ? { GIT_ATTR_SOURCE: attributesFrom } : {}) };
   try {
     await git(cwd, ['read-tree', parent], { env });
     await git(cwd, ['add', '-A', '--', '.'], { env });
@@ -154,7 +163,7 @@ export async function captureIsolatedResult(isolated: IsolatedWorkspace): Promis
   const { common } = await repository(isolated.source);
   const worktree = worktreePath(common, isolated.id);
   const parent = (await resolveRef(worktree, ref(isolated.id, 'result'))) ?? isolated.base;
-  const result = await snapshot(worktree, common, parent, `mars: result ${isolated.id}`);
+  const result = await snapshot(worktree, common, parent, `mars: result ${isolated.id}`, isolated.base);
   await git(worktree, ['update-ref', ref(isolated.id, 'result'), result]);
   return { base: isolated.base, result, files: await changedFiles(worktree, isolated.base, result) };
 }
@@ -200,16 +209,15 @@ export async function isolatedDiff(source: string, id: string, options: { stat?:
   return (await git(run.top, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', ...(options.stat ? ['--stat'] : ['--binary']), run.base, run.result])).stdout;
 }
 
-/** Applies the agent's diff to the user's working tree. Never resets or overwrites on conflict. */
-export async function applyIsolatedRun(source: string, id: string, options: { threeWay?: boolean } = {}): Promise<string[]> {
+/** Applies the agent's diff to the user's working tree only (never the index). Changes nothing unless it applies cleanly. */
+export async function applyIsolatedRun(source: string, id: string): Promise<string[]> {
   const run = await requireRun(source, id);
   const files = await changedFiles(run.top, run.base, run.result);
   if (!files.length) return [];
-  const patch = (await git(run.top, ['diff', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', run.base, run.result])).stdout;
-  const mode = options.threeWay ? ['--3way'] : [];
-  const check = await git(run.top, ['apply', '--check', ...mode, '-'], { input: patch, allowFailure: true });
-  if (check.code !== 0) throw new MarsError('ToolExecutionError', `The run no longer applies cleanly; nothing was changed.${options.threeWay ? '' : ' Retry with --3way to merge with conflict markers.'}\n${check.stderr.trim()}`);
-  await git(run.top, ['apply', ...mode, '-'], { input: patch });
+  const patch = (await git(run.top, ['diff', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', run.base, run.result])).stdout;
+  const check = await git(run.top, ['apply', '--check', '-p1', '-'], { input: patch, allowFailure: true });
+  if (check.code !== 0) throw new MarsError('ToolExecutionError', `The run no longer applies cleanly; nothing was changed. Inspect it with mars runs diff ${id}.\n${check.stderr.trim()}`);
+  await git(run.top, ['apply', '-p1', '-'], { input: patch });
   return files;
 }
 
