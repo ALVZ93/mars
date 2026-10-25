@@ -110,9 +110,13 @@ test('routing and workflow selection are deterministic and do not call a model',
   assert.equal(selectWorkflow('the tests are failing').id, 'bugfix');
   const bugfix = selectWorkflow('the tests are failing');
   assert.match(bugfix.phases[0].instruction, /Read-only phase/);
-  assert.match(bugfix.phases[1].instruction, /without repeating broad inspection/);
-  assert.match(bugfix.phases[2].instruction, /do not modify files or run shell commands/);
-  assert.match(bugfix.phases[2].instruction, /MARS executes the configured verification commands/);
+  assert.equal(bugfix.phases[1].reproduction, true);
+  assert.match(bugfix.phases[1].instruction, /fails because of the reported bug/);
+  assert.doesNotMatch(bugfix.phases[1].allowedTools.join(), /shell/);
+  assert.match(bugfix.phases[2].instruction, /without repeating broad inspection/);
+  assert.match(bugfix.phases[2].instruction, /never the test/);
+  assert.match(bugfix.phases[3].instruction, /do not modify files or run shell commands/);
+  assert.match(bugfix.phases[3].instruction, /MARS executes the reproduction test and the configured verification commands/);
   const review = selectWorkflow('review this diff');
   assert.match(review.phases[0].instruction, /read_file and git tools/);
   assert.match(review.phases[0].instruction, /Do not modify files, run shell commands or use the network/);
@@ -141,7 +145,7 @@ test('SDK exposes lifecycle hooks and opt-in workflows with real verification', 
   const mars = await createMars({ workspace: root, provider, model: 'scripted', includeProjectContext: false, shellPolicy: 'allow' });
   const events = [];
   mars.on('model:request', event => events.push(event));
-  await mars.runWorkflow(undefined, 'fix this bug');
+  await mars.runWorkflow(undefined, 'add this behavior');
   assert.equal(events.length, 3);
   assert.equal(mars.session.messages.filter(message => message.role === 'user').length, 3);
 });

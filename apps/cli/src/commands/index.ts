@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FakeProvider, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
+import { FakeProvider, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
 import type { CredentialStore, RouteDecision, VerificationReport, RunReport } from '../../../../packages/sdk/src/internal.js';
 import { providerAuthCatalog } from '../../../../packages/auth/src/index.js';
 import { showMarsBoot } from '../visual.js';
@@ -12,8 +12,10 @@ import { isolationSummary } from './runs.js';
 import { prompt, safe, targetParts, workspaceRoot } from '../utils/common.js';
 export async function runTask(target: string, root: string, values: Record<string, unknown>, credentials: CredentialStore, task: string, sessionId?: string, route?: RouteDecision): Promise<void> {
   const reportPath = typeof values.report === 'string' ? await (await Workspace.open(root)).resolve(values.report) : undefined;
-  if (reportPath) {
-    try { await lstat(reportPath); throw new MarsError('ConfigurationError', 'Report destination already exists. Choose a new file.'); }
+  const receiptPath = typeof values.receipt === 'string' ? await (await Workspace.open(root)).resolve(values.receipt) : undefined;
+  for (const destination of [reportPath, receiptPath]) {
+    if (!destination) continue;
+    try { await lstat(destination); throw new MarsError('ConfigurationError', 'Report destination already exists. Choose a new file.'); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   const { mars, eventLog, roleTargets } = await createSessionMars(target, root, values, credentials, sessionId);
@@ -42,6 +44,16 @@ export async function runTask(target: string, root: string, values: Record<strin
     if (budget?.exceeded) process.stderr.write(`[budget] exhausted (${budget.exceeded}) · ${budget.modelRequests} request(s) · ${budget.tokensKnown ? budget.tokens : 'unknown'} token(s)\n`);
     try { await mars.close(); } catch (error) { failure ??= error; }
     try { await eventLog?.flush(); } catch (error) { failure ??= error; }
+    if (receiptPath && runs.length) {
+      try {
+        await mkdir(path.dirname(receiptPath), { recursive: true });
+        await writeFile(receiptPath, renderReceipt(runs), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        process.stderr.write(`[receipt] ${safe(receiptPath)}\n`);
+      } catch {
+        process.stderr.write('Could not export the receipt.\n');
+        failure ??= new MarsError('ConfigurationError', 'Could not export the receipt.');
+      }
+    }
     if (reportPath) {
       try {
         await (await Workspace.open(root)).resolve(values.report as string);

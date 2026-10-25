@@ -1,6 +1,7 @@
 export { createMars } from './internal.js';
 export type { MarsHook, MarsOptions } from './internal.js';
 export type { RunReport } from './reports.js';
+export { renderReceipt, receiptVerdict } from './receipt.js';
 export { FileKnowledgeStore } from '../../runtime/src/index.js';
 export type { KnowledgeStore, KnowledgeSnapshot, KnowledgeEntry, KnowledgeKind, KnowledgeProposal, KnowledgeSource, SessionRunReceipt } from '../../runtime/src/index.js';
 export { MarsError } from '../../core/src/index.js';

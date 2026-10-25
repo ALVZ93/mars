@@ -117,6 +117,20 @@ mars runs discard ID          # elimina worktree y refs
 
 Requiere Git con al menos un commit; no admite submódulos ni `--sandbox docker` por ahora. `node_modules` se enlaza al worktree para que los checks funcionen. `mars resume ID` reabre el mismo worktree. Detalles en [ADR 007](decisions/007-isolated-runs-and-task-budget.md).
 
+## Bugfix con prueba y contrato
+
+`--workflow bugfix` exige un test que reproduzca el bug: el agente lo escribe y lo declara, MARS comprueba que falla antes del arreglo y que pasa después, y el test queda protegido. `contract.protect` añade globs que ningún workflow puede modificar:
+
+```json
+{ "contract": { "protect": ["tests/**", "fixtures/**"] } }
+```
+
+```sh
+mars run "add() devuelve un resultado incorrecto" --workflow bugfix --isolate --receipt reports/add-fix.md
+```
+
+`--receipt` escribe un resumen Markdown listo para un PR. Detalles en [ADR 008](decisions/008-bugfix-proof-contract-and-receipts.md).
+
 ## Instrucciones y skills
 
 La CLI incorpora notas y skills aprobadas de `.mars/knowledge.json` cuando `knowledge.enabled` está activo y no se usa `--no-save`. Pendientes, rechazadas y supersedidas no se cargan. La configuración se aplica al iniciar/reanudar una sesión; las aprobaciones y eliminaciones se refrescan al empezar cada fase. `includeProjectContext: false` desactiva la carga automática en el SDK. Consulta [memoria y captura local de procedimientos](direccion-producto.md) para revisar, aprobar y olvidar entradas.

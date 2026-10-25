@@ -56,6 +56,7 @@ Options:
   --workflow    Run a workflow (bugfix, feature or review)
   --repair-attempts Repair failing workflow checks (0 to 3; default: 0)
   --report      Export run/check reports as JSON to a new workspace file
+  --receipt     Export a Markdown receipt (proof, contract, checks, changes) to a new workspace file
   --verify      Run standard project checks after the agent finishes
   --isolate     Work in a disposable Git worktree; apply the diff later with mars runs apply
   --budget-time Total milliseconds for the whole task, shared by all phases and repairs

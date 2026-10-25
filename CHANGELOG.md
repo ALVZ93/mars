@@ -6,6 +6,9 @@ Todos los cambios relevantes se documentarán aquí. El proyecto sigue [Semantic
 
 ### Added
 
+- `bugfix` con prueba rojo→verde: fase `reproduce` con `declare_reproduction`, test que debe fallar antes y pasar después, y archivos de reproducción protegidos (ADR 008).
+- Contrato de tarea `contract.protect`: escrituras denegadas y detección por hash antes de cada verificación, sin reparación.
+- Recibos Markdown `--receipt FILE.md` / SDK `renderReceipt` con veredicto, prueba, contrato, checks y cambios.
 - Presupuesto global de tarea (`budget.*`, `--budget-time/-requests/-tokens`) compartido por fases, reparaciones, reintentos y checks; `BudgetExceededError` y `RunReport.budget`.
 - Ejecuciones aisladas `--isolate` en `git worktree` con base exacta del árbol actual, diff atribuido al agente y comandos `mars runs list|diff|apply|discard`; `RunReport.isolation`.
 - Memoria y procedimientos revisados por proyecto, con propuestas del agente, revisión CLI/interactiva, procedencia, lock de escritura y carga por relevancia.

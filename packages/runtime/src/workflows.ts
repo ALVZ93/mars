@@ -6,6 +6,8 @@ export interface WorkflowPhase {
   instruction: string;
   verification?: boolean;
   allowedTools?: readonly string[];
+  /** Writes a failing test and declares it; MARS requires it to fail now and pass at verification. */
+  reproduction?: boolean;
 }
 export interface WorkflowDefinition {
   id: string;
@@ -17,12 +19,13 @@ export interface WorkflowDefinition {
 }
 
 const bugfix: WorkflowDefinition = {
-  id: 'bugfix', description: 'Reproduce, fix and verify a failing behavior.',
+  id: 'bugfix', description: 'Reproduce with a failing test, fix, and prove it: red before, green after, test untouched.',
   repairPhase: 'implement',
   phases: [
     { id: 'inspect', role: 'planner', allowedTools: ['read_file', 'search_files', 'git'], instruction: 'Read-only phase: inspect only the files needed to establish a concrete reproduction. Do not modify files or implement the fix. As soon as the failing behavior and likely boundary are clear, report them concisely and stop.' },
-    { id: 'implement', role: 'implementer', instruction: 'Start from the reproduction already established in the prior phase. Implement the smallest correct fix without repeating broad inspection. Preserve unrelated behavior, then report the focused diff and stop.' },
-    { id: 'verify', role: 'verifier', allowedTools: ['read_file', 'search_files', 'git'], instruction: 'Verification review only: do not modify files or run shell commands. Briefly identify the relevant checks and stop; MARS executes the configured verification commands immediately after this phase and owns their exit status.', verification: true },
+    { id: 'reproduce', role: 'implementer', reproduction: true, allowedTools: ['read_file', 'search_files', 'git', 'write_file'], instruction: 'Reproduction phase: write the smallest automated test that fails because of the reported bug, using the project\'s existing test framework and conventions. Only create or edit test files; do not fix the bug and do not run commands. Then call declare_reproduction with the exact shell command that runs only that test from the workspace root, and the test file paths, and stop. MARS runs the command and requires it to fail before any fix.' },
+    { id: 'implement', role: 'implementer', instruction: 'Start from the reproduction already established in the prior phases. Implement the smallest correct fix without repeating broad inspection. The reproduction test files are protected: change the implementation, never the test. Preserve unrelated behavior, then report the focused diff and stop.' },
+    { id: 'verify', role: 'verifier', allowedTools: ['read_file', 'search_files', 'git'], instruction: 'Verification review only: do not modify files or run shell commands. Briefly identify the relevant checks and stop; MARS executes the reproduction test and the configured verification commands immediately after this phase and owns their exit status.', verification: true },
   ],
   matches: task => /bug|fix|fail|error|broken|regression|falla|error/i.test(task),
 };

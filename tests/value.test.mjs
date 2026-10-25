@@ -95,7 +95,7 @@ test('review, disabled repair, missing checks, denied permission, executor error
         },
       });
       t.after(() => mars.close());
-      await assert.rejects(mars.runWorkflow(scenario === 'review' ? 'review' : 'bugfix', 'fix task', controller.signal));
+      await assert.rejects(mars.runWorkflow(scenario === 'review' ? 'review' : 'feature', 'fix task', controller.signal));
       assert.equal(mars.lastRun.repairAttempts, 0);
       assert.equal(provider.requests.length, scenario === 'review' ? 2 : 3);
       assert.equal(calls, ['missing', 'denied'].includes(scenario) ? 0 : 1);
@@ -215,7 +215,7 @@ test('CLI exports success and failure reports, preserving no-save and rejecting 
   await writeFile(path.join(root, 'check.mjs'), 'import { readFileSync } from "node:fs"; process.exit(readFileSync("value.txt", "utf8") === "fixed" ? 0 : 1);');
   await writeFile(path.join(root, '.mars', 'config.json'), JSON.stringify({ verification: { commands: ['node check.mjs'] } }));
   await writeFile(script, JSON.stringify([answer(), answer(), answer(), write('value.txt', 'fixed'), answer(), answer()]));
-  const repaired = run(['--workflow', 'bugfix', '--repair-attempts', '1', '--allow-shell', '--report', 'reports/repaired.json']);
+  const repaired = run(['--workflow', 'feature', '--repair-attempts', '1', '--allow-shell', '--report', 'reports/repaired.json']);
   assert.equal(repaired.status, 0, repaired.stderr);
   const repairReport = JSON.parse(await readFile(path.join(root, 'reports', 'repaired.json'), 'utf8')).runs[0];
   assert.equal(repairReport.status, 'completed');
