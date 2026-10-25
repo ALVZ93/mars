@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { AnthropicProvider, FakeProvider, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
+import { AnthropicProvider, FakeProvider, FileEventLog, isolatedRunExists, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
 import type { CredentialStore, ModelProvider, RouteDecision } from '../../../packages/sdk/src/internal.js';
 import { ConversationScreen } from './conversation.js';
 import { authContext, authProvider, authenticatedProviders } from './commands/auth.js';
@@ -97,6 +97,13 @@ export async function createSessionMars(target: string, root: string, values: Re
     maxRetries: nonNegative(typeof values['max-retries'] === 'string' ? values['max-retries'] : undefined, loaded.config.limits.maxRetries),
     retryDelayMs: positive(typeof values['retry-delay'] === 'string' ? values['retry-delay'] : undefined, loaded.config.limits.retryDelayMs),
     maxContextChars: loaded.config.limits.maxContextChars,
+    isolation: values.isolate === true || (sessionId !== undefined && await isolatedRunExists(root, sessionId)) ? 'worktree' as const : 'none' as const,
+    budget: {
+      ...loaded.config.budget,
+      ...(typeof values['budget-time'] === 'string' ? { maxDurationMs: positive(values['budget-time'], 1) } : {}),
+      ...(typeof values['budget-requests'] === 'string' ? { maxModelRequests: positive(values['budget-requests'], 1) } : {}),
+      ...(typeof values['budget-tokens'] === 'string' ? { maxTokens: positive(values['budget-tokens'], 1) } : {}),
+    },
     verificationCommands: loaded.config.verification.commands,
     maxRepairAttempts: typeof values['repair-attempts'] === 'string' ? Number(values['repair-attempts']) : loaded.config.verification.maxRepairAttempts,
     shellPolicy, permissionPolicies: { ...loaded.config.permissions, shell: shellPolicy }, approveShell: approval(screen), includeProjectContext: true,

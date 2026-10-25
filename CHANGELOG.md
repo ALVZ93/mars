@@ -6,6 +6,8 @@ Todos los cambios relevantes se documentarán aquí. El proyecto sigue [Semantic
 
 ### Added
 
+- Presupuesto global de tarea (`budget.*`, `--budget-time/-requests/-tokens`) compartido por fases, reparaciones, reintentos y checks; `BudgetExceededError` y `RunReport.budget`.
+- Ejecuciones aisladas `--isolate` en `git worktree` con base exacta del árbol actual, diff atribuido al agente y comandos `mars runs list|diff|apply|discard`; `RunReport.isolation`.
 - Memoria y procedimientos revisados por proyecto, con propuestas del agente, revisión CLI/interactiva, procedencia, lock de escritura y carga por relevancia.
 - Captura local `mars learn SESSION_ID` / SDK `learnFrom` desde sesiones verificadas, sin enviar historiales ni llamar al modelo.
 - Recibos mínimos de verificación en sesiones y comandos de gestión local independientes del backend de credenciales.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentEvent, ErrorCode } from '../../core/src/index.js';
 import type { VerificationReport } from '../../tools/src/index.js';
+import type { BudgetReport } from './budget.js';
 
 export interface RunReport {
   schemaVersion: 1;
@@ -24,6 +25,9 @@ export interface RunReport {
   usage: Array<{ provider: string; inputTokens: number; outputTokens: number; samples: number }>;
   verificationStatus: 'not-run' | 'passed' | 'failed';
   verifications: Array<{ phase: string; attempt: number; report: VerificationReport }>;
+  budget?: BudgetReport;
+  /** Isolated runs only: the agent's diff is exactly base..result. */
+  isolation?: { id: string; base: string; result: string; files: string[] };
 }
 
 export class RunReports {
@@ -65,6 +69,8 @@ export class RunReports {
     this.#current.verifications.push({ phase, attempt, report: structuredClone(value) });
     this.#current.verificationStatus = value.verified ? 'passed' : 'failed';
   }
+  budget(value: BudgetReport): void { if (this.#current) this.#current.budget = structuredClone(value); }
+  isolation(value: NonNullable<RunReport['isolation']>): void { if (this.#current) this.#current.isolation = structuredClone(value); }
   repair(): void { if (this.#current) this.#current.repairAttempts++; }
   finish(status: RunReport['status'], error?: ErrorCode): void {
     if (!this.#current) return;

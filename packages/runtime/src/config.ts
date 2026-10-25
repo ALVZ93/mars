@@ -30,6 +30,8 @@ export interface MarsConfig {
     retryDelayMs: number;
   };
   verification: { commands: string[]; maxRepairAttempts: number };
+  /** Optional limits shared by every phase of one operation; absent means unlimited. */
+  budget: { maxDurationMs?: number; maxModelRequests?: number; maxTokens?: number };
   mcp: { servers: McpServerConfig[] };
   knowledge: { enabled: boolean };
 }
@@ -56,6 +58,7 @@ export type ConfigPatch = {
   permissions?: Partial<MarsConfig['permissions']>;
   limits?: Partial<MarsConfig['limits']>;
   verification?: Partial<MarsConfig['verification']>;
+  budget?: Partial<MarsConfig['budget']>;
   mcp?: Partial<MarsConfig['mcp']>;
   knowledge?: Partial<MarsConfig['knowledge']>;
 };
@@ -67,6 +70,7 @@ export const DEFAULT_CONFIG: MarsConfig = {
   permissions: { shell: 'ask', destructiveShell: 'deny', network: 'ask', gitCommit: 'ask', gitPush: 'ask' },
   limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500 },
   verification: { commands: [], maxRepairAttempts: 0 },
+  budget: {},
   mcp: { servers: [] },
   knowledge: { enabled: true },
 };
@@ -104,7 +108,18 @@ function parseConfig(value: unknown): ConfigPatch {
   const verification = source.verification;
   const mcp = source.mcp;
   const knowledge = source.knowledge;
+  const budget = source.budget;
   const result: ConfigPatch = { version: 1 };
+  if (budget !== undefined) {
+    if (!budget || typeof budget !== 'object' || Array.isArray(budget)) throw new MarsError('ConfigurationError', 'Config budget must be an object.');
+    const value = budget as Record<string, unknown>;
+    result.budget = {};
+    for (const key of ['maxDurationMs', 'maxModelRequests', 'maxTokens'] as const) {
+      if (value[key] === undefined) continue;
+      if (!Number.isSafeInteger(value[key]) || (value[key] as number) < 1) throw new MarsError('ConfigurationError', `Config budget.${key} must be a positive integer.`);
+      result.budget[key] = value[key] as number;
+    }
+  }
   if (knowledge !== undefined) {
     if (!knowledge || typeof knowledge !== 'object' || Array.isArray(knowledge) || typeof (knowledge as Record<string, unknown>).enabled !== 'boolean') throw new MarsError('ConfigurationError', 'Config knowledge.enabled must be boolean.');
     result.knowledge = { enabled: (knowledge as { enabled: boolean }).enabled };
@@ -185,6 +200,7 @@ export function mergeConfig(...configs: Array<ConfigPatch | undefined>): MarsCon
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
+    if (config.budget) result.budget = { ...result.budget, ...config.budget };
     if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
@@ -200,6 +216,7 @@ function mergePatch(...configs: Array<ConfigPatch | undefined>): ConfigPatch {
     if (config.routing) result.routing = { ...result.routing, ...config.routing };
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
+    if (config.budget) result.budget = { ...result.budget, ...config.budget };
     if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }

@@ -86,7 +86,7 @@ mars config set mcp.servers '[{"name":"local","command":"node","args":["./mcp-se
 
 ## Reparación e informes
 
-`verification.maxRepairAttempts` admite enteros de 0 a 3; default 0. `--repair-attempts N` lo sustituye para la invocación y requiere `--workflow`. Los workflows `bugfix` y `feature` reutilizan el implementador tras un check ejecutado con exit code no cero, repasan la verificación y repiten la lista original de comandos. El límite se comparte entre fases. `review`, permisos denegados, ausencia de checks, errores del executor, timeout y cancelación no disparan reparación. Los límites de turnos y tiempo siguen siendo por fase, sin presupuesto global del workflow.
+`verification.maxRepairAttempts` admite enteros de 0 a 3; default 0. `--repair-attempts N` lo sustituye para la invocación y requiere `--workflow`. Los workflows `bugfix` y `feature` reutilizan el implementador tras un check ejecutado con exit code no cero, repasan la verificación y repiten la lista original de comandos. El límite se comparte entre fases. `review`, permisos denegados, ausencia de checks, errores del executor, timeout y cancelación no disparan reparación. Los límites de turnos y tiempo son por fase; el presupuesto global de la sección siguiente cubre la operación completa.
 
 ```sh
 mars run "Corrige la regresión" --workflow bugfix --repair-attempts 1 --report reports/bugfix-001.json
@@ -95,6 +95,27 @@ mars run "Corrige la regresión" --workflow bugfix --repair-attempts 1 --report 
 `--report PATH` exporta JSON de las operaciones de una tarea no interactiva, también tras fallo. El destino debe ser un archivo nuevo permitido dentro del workspace; `.mars` y otras rutas sensibles quedan excluidas. `--verify` añade una operación de verificación al informe. El SDK expone `mars.lastRun` y el tipo público `RunReport`.
 
 El informe contiene comandos y salida de checks, que pueden incluir datos privados; no incluye campos de prompts ni respuestas del modelo. Los tokens son solo los comunicados por el proveedor, sin estimación de coste. `--no-save` no cancela una exportación solicitada expresamente con `--report`. Consulta las [ventajas y límites del harness](ventajas-del-harness.md).
+
+## Presupuesto global y ejecuciones aisladas
+
+`budget.maxDurationMs`, `budget.maxModelRequests` y `budget.maxTokens` limitan una operación completa (todas las fases, reparaciones, reintentos y checks). Sin valor, no hay límite. Los flags `--budget-time`, `--budget-requests` y `--budget-tokens` los sustituyen para la invocación. Se comprueban antes de cada petición al modelo; agotarlos devuelve `BudgetExceededError` y el informe registra `budget.exceeded`. Los tokens no comunicados marcan `tokensKnown: false`.
+
+```sh
+mars config set budget.maxModelRequests 40
+mars run "Corrige la regresión" --workflow bugfix --repair-attempts 2 --budget-time 900000
+```
+
+`--isolate` ejecuta la tarea en un `git worktree` desechable creado desde el estado actual del árbol (incluidos cambios sin commitear). Tu árbol no se modifica hasta que lo apliques:
+
+```sh
+mars run "Añade la validación" --isolate
+mars runs                     # lista ejecuciones aisladas
+mars runs diff ID [--stat]    # diff exacto del agente
+mars runs apply ID [--3way]   # aplica al árbol de trabajo, sin tocar el índice
+mars runs discard ID          # elimina worktree y refs
+```
+
+Requiere Git con al menos un commit. `node_modules` se enlaza al worktree para que los checks funcionen. `mars resume ID` reabre el mismo worktree. Detalles en [ADR 007](decisions/007-isolated-runs-and-task-budget.md).
 
 ## Instrucciones y skills
 

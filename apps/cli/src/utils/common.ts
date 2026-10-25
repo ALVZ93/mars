@@ -27,6 +27,7 @@ mars learn SESSION_ID                 Capture a local procedure draft from verif
 mars evidence                         Show local skill/workflow evidence
 mars health                           Show last-known provider health
 mars logout PROVIDER                   Disconnect a provider
+mars runs [list|diff|apply|discard ID] Review and apply isolated runs (--stat, --3way)
 
 Authentication:
   mars login openai --api-key
@@ -56,6 +57,10 @@ Options:
   --repair-attempts Repair failing workflow checks (0 to 3; default: 0)
   --report      Export run/check reports as JSON to a new workspace file
   --verify      Run standard project checks after the agent finishes
+  --isolate     Work in a disposable Git worktree; apply the diff later with mars runs apply
+  --budget-time Total milliseconds for the whole task, shared by all phases and repairs
+  --budget-requests Total model requests for the whole task
+  --budget-tokens Total reported tokens for the whole task
   --json        Print machine-readable output where supported
   --no-save     Do not persist the session or enable project knowledge integration
   --no-animation Skip the MARS startup animation

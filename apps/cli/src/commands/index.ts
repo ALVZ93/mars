@@ -8,6 +8,7 @@ import { showMarsBoot } from '../visual.js';
 import { choose } from '../terminal.js';
 import { approval, createSessionMars } from '../session.js';
 import { authProvider, authenticatedProviders, loginCommand } from './auth.js';
+import { isolationSummary } from './runs.js';
 import { prompt, safe, targetParts, workspaceRoot } from '../utils/common.js';
 export async function runTask(target: string, root: string, values: Record<string, unknown>, credentials: CredentialStore, task: string, sessionId?: string, route?: RouteDecision): Promise<void> {
   const reportPath = typeof values.report === 'string' ? await (await Workspace.open(root)).resolve(values.report) : undefined;
@@ -36,6 +37,9 @@ export async function runTask(target: string, root: string, values: Record<strin
   } catch (error) { failure = error; }
   finally {
     process.off('SIGINT', cancel);
+    if (mars.isolation) process.stderr.write(isolationSummary(runs.at(-1)));
+    const budget = runs.at(-1)?.budget;
+    if (budget?.exceeded) process.stderr.write(`[budget] exhausted (${budget.exceeded}) · ${budget.modelRequests} request(s) · ${budget.tokensKnown ? budget.tokens : 'unknown'} token(s)\n`);
     try { await mars.close(); } catch (error) { failure ??= error; }
     try { await eventLog?.flush(); } catch (error) { failure ??= error; }
     if (reportPath) {
@@ -85,7 +89,7 @@ export async function configCommand(positionals: string[], root: string): Promis
   if (action === 'path') { process.stdout.write(`${loaded.paths.project}\n`); return; }
   if (action === 'set' && positionals.length >= 4) {
     const key = positionals[2]!;
-    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'verification.maxRepairAttempts', 'mcp.servers', 'knowledge.enabled']);
+    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'verification.maxRepairAttempts', 'budget.maxDurationMs', 'budget.maxModelRequests', 'budget.maxTokens', 'mcp.servers', 'knowledge.enabled']);
     if (!allowed.has(key)) throw new MarsError('ConfigurationError', `Unknown config key: ${key}`);
     const raw = positionals.slice(3).join(' ');
     let value: unknown = raw;
