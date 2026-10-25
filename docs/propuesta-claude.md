@@ -1,6 +1,41 @@
 # Propuesta de producto — «MARS: cambios con prueba»
 
-Autor: Claude (revisión externa), 25-oct-2026. Documento de discusión para Codex y el mantenedor; nada de esto está implementado.
+Autor: Claude (revisión externa), 25-oct-2026. Documento vivo: la sección siguiente recoge el estado y la dirección vigentes; el resto es la propuesta original.
+
+## Estado y dirección actual (25-oct-2026, tarde)
+
+**Hecho:**
+- Fase A: aislamiento Git y presupuesto global ([ADR 007](decisions/007-isolated-runs-and-task-budget.md)).
+- Fase B: bugfix con prueba rojo→verde, contrato y recibos ([ADR 008](decisions/008-bugfix-proof-contract-and-receipts.md)), endurecida tras tres revisiones de Codex.
+- Runner propio de Codex sin la configuración del usuario.
+- Evals con test oculto ([ADR 009](decisions/009-evals.md)).
+- Cómo funciona todo junto: [arquitectura](arquitectura.md).
+
+**Lo que dijeron los primeros evals** ([resultados](../evals/RESULTS.md)):
+- 0 falsas pruebas.
+- Sobre bugs sencillos, `codex exec` solo arregla lo mismo, unas 2,5× más rápido.
+- Verificar no basta como argumento.
+
+**Dirección nueva.** MARS solo tiene sentido si **supera** a las apps y CLIs oficiales de cada proveedor (Codex, Claude Code, Antigravity/Gemini…), no si las iguala. Su ventaja tiene que venir de lo que una app de un solo proveedor no puede hacer:
+
+1. **Varios intentos elegidos por un juez objetivo.**
+   - La prueba de MARS (reproducción protegida, rojo→verde, checks) sirve de juez.
+   - Con un juez fiable, lanzar varios intentos en paralelo (cada uno en su worktree) y quedarse con el probado de diff más pequeño sube la tasa de éxito en bugs difíciles.
+   - Los intentos pueden venir de proveedores distintos, usando sus **CLIs oficiales como motores de intentos** con la suscripción del propio usuario. Ninguna app de proveedor hace un torneo entre proveedores con verificación.
+2. **Trabajo sin supervisión.** Una cola de incidencias, un CI rojo o upgrades de dependencias que vuelven como arreglos probados o como «no reproducible» honestos, cada uno con su recibo.
+3. **La prueba como puerta de automatización.** PRs, etiquetas o auto-merge solo con *Fixed and proven*.
+
+**Hoja de ruta revisada:**
+
+| Paso | Entrega | Criterio de éxito |
+| --- | --- | --- |
+| 1 | Corpus difícil (hecho: 11 tareas) y baselines de Codex, Claude Code y Antigravity | Una ejecución única de cada CLI falla en parte del corpus |
+| 2 | Intentos elegidos por verificador: `--attempts N`, `--engines codex,claude,agy` | Con el mismo presupuesto en tiempo, MARS arregla claramente más que la mejor CLI sola, con 0 falsas pruebas |
+| 3 | Rechazo honesto cuando el problema está en el test (trampa `trap-outdated-test`) | La trampa no produce *Fixed and proven* |
+| 4 | Modo cola / CI y GitHub Action (antigua fase C, reorientada) | Un lote de incidencias produce PRs con recibo sin intervención |
+| 5 | Coste por tarea (backlog al final de este documento) y `mars ui` | — |
+
+Si el paso 2 no mejora claramente a la mejor CLI en el corpus difícil, se revisa la estrategia antes de invertir en el paso 4.
 
 ## Diagnóstico
 
@@ -83,7 +118,9 @@ Tiempo, peticiones y tokens compartidos por todas las fases y reparaciones; cort
 
 Más providers, swarm/subagentes arbitrarios, chat UI genérica, marketplace, RAG/vector DB. Ninguno refuerza la tesis «cambio con prueba».
 
-## Orden propuesto
+## Orden propuesto (original)
+
+A y B están hechas; C, D y E quedan sustituidas por la hoja de ruta revisada del principio de este documento.
 
 | Fase | Entrega | Por qué primero |
 | --- | --- | --- |

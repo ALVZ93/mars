@@ -15,6 +15,19 @@
 
 MARS es un harness local para trabajar con IA sobre repositorios y carpetas de trabajo desde la terminal. Conecta el modelo que elijas, mantiene sesiones y memoria revisada por proyecto y ofrece herramientas de lectura, escritura, búsqueda, Git, shell, verificación, skills, workflows y servidores MCP.
 
+**El modelo propone; MARS ejecuta, limita y comprueba.** Una tarea no termina en un mensaje del modelo, sino en un recibo con lo que de verdad pasó:
+
+```sh
+mars run "La página 1 muestra los elementos de la página 2" --workflow bugfix --isolate --receipt recibo.md
+```
+
+- **Prueba de arreglo.** El agente escribe un test que reproduce el bug. MARS exige que falle antes del arreglo, que el fallo venga de ese test y que pase después. El test queda protegido para que no se pueda «arreglar» debilitándolo.
+- **Tu árbol intacto.** `--isolate` trabaja en una copia aparte. `mars runs diff|apply|discard` deciden qué llega a tu proyecto.
+- **Presupuesto** de tiempo, peticiones y tokens para toda la tarea.
+- **Recibo Markdown** listo para un PR, sin texto del modelo y con las credenciales redactadas.
+
+Empieza por la [guía rápida](docs/guia-rapida.md). Para el funcionamiento interno, lee la [arquitectura](docs/arquitectura.md). La [evaluación](evals/RESULTS.md) mide si MARS aporta algo frente a usar el modelo sin MARS, fallos incluidos.
+
 La [dirección de producto y guía de memoria](docs/direccion-producto.md) explica cómo proponer notas, aprobar procedimientos y reutilizar trabajo verificado. `mars learn SESSION_ID` captura un borrador local sin llamadas al modelo; `mars memory` y `mars skills pending` permiten revisarlo antes de activarlo.
 
 Consulta [qué aporta el harness frente a usar un modelo directamente](docs/ventajas-del-harness.md): ventajas comprobables, límites y mejoras pendientes. Los workflows `bugfix` y `feature` admiten reparación opt-in de checks fallidos (`--repair-attempts 1`); `--report reports/tarea-001.json` exporta los resultados de una tarea, incluso si falla.
@@ -224,6 +237,7 @@ También puedes ejecutar una tarea sin abrir la interfaz:
 mars "Explica la arquitectura de este repositorio"
 mars "Corrige los tests que fallan" --verify
 mars "Revisa el diff actual" --workflow review --route
+mars run "El total no suma los céntimos" --workflow bugfix --isolate --receipt reports/total.md --budget-time 900000
 ```
 
 ## Comandos principales
@@ -243,6 +257,8 @@ mars "Revisa el diff actual" --workflow review --route
 | `mars sessions` | Lista sesiones del proyecto |
 | `mars resume ID` | Retoma una sesión |
 | `mars check` | Ejecuta la verificación del proyecto |
+| `mars runs` | Lista ejecuciones aisladas (`--isolate`) |
+| `mars runs diff ID` / `apply ID` / `discard ID` | Revisa, aplica o descarta el diff de una ejecución aislada |
 | `mars skills` | Lista skills personales y del proyecto |
 | `mars workflows` | Lista workflows disponibles |
 | `mars health` | Muestra el último estado observado de los proveedores |
