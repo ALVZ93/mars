@@ -8,6 +8,8 @@ export interface RunReport {
   id: string;
   sessionId: string;
   kind: 'run' | 'workflow' | 'verify';
+  /** Execution root (the isolated worktree when isolation is on); receipts print paths relative to it. */
+  workspace?: string;
   workflow?: string;
   startedAt: string;
   finishedAt?: string;
@@ -39,10 +41,10 @@ export class RunReports {
   #last?: RunReport;
   #started = 0;
   get last(): RunReport | undefined { return this.#last ? structuredClone(this.#last) : undefined; }
-  start(sessionId: string, kind: RunReport['kind'], workflow?: string): void {
+  start(sessionId: string, kind: RunReport['kind'], workflow?: string, workspace?: string): void {
     this.#started = performance.now();
     this.#current = {
-      schemaVersion: 1, id: randomUUID(), sessionId, kind, ...(workflow ? { workflow } : {}),
+      schemaVersion: 1, id: randomUUID(), sessionId, kind, ...(workflow ? { workflow } : {}), ...(workspace ? { workspace } : {}),
       startedAt: new Date().toISOString(), durationMs: 0, status: 'active', models: [],
       modelRequests: 0, modelRetries: 0, toolCalls: 0, toolErrors: 0, permissionDenials: 0,
       repairAttempts: 0, usage: [], verificationStatus: 'not-run', verifications: [],

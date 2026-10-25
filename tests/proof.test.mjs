@@ -231,3 +231,18 @@ test('receipts escape dynamic values and redact credentials', () => {
   assert.equal((receipt.match(/^~~~/gm) ?? []).length % 2, 0, 'fences stay balanced');
   assert.match(receipt, /✅ MARS — Fixed and proven/);
 });
+
+test('receipts print paths relative to the execution root and the home directory as ~', async () => {
+  const { homedir } = await import('node:os');
+  const root = path.join(homedir(), 'repo', '.git', 'mars', 'worktrees', 'run-9');
+  const url = `file:///${root.replaceAll('\\', '/').replace(/^\//, '')}/test/a.test.js:5:56`;
+  const output = `at TestContext (${url})\nlog written to ${path.join(root, 'out.txt')}\ncache in ${path.join(homedir(), '.cache', 'x')}`;
+  const report = { schemaVersion: 1, id: 'run-2', sessionId: 's', kind: 'workflow', workflow: 'bugfix', workspace: root, startedAt: new Date().toISOString(), durationMs: 1, status: 'failed',
+    models: [], modelRequests: 0, modelRetries: 0, toolCalls: 0, toolErrors: 0, permissionDenials: 0, repairAttempts: 0, usage: [], verificationStatus: 'not-run', verifications: [],
+    proof: { phase: 'reproduce', command: `node ${path.join(root, 'test', 'a.test.js')}`, files: ['test/a.test.js'], red: { exitCode: 1, output } } };
+  const receipt = renderReceipt([report]);
+  assert.ok(!receipt.toLowerCase().includes(homedir().toLowerCase()), receipt);
+  assert.ok(!receipt.includes(homedir().replaceAll('\\', '/')), receipt);
+  assert.match(receipt, /\(\.\/test\/a\.test\.js:5:56\)/);
+  assert.match(receipt, /~[\\/]\.cache[\\/]x/);
+});

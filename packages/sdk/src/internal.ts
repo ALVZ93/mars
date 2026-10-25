@@ -182,7 +182,7 @@ export async function createMars(options: MarsOptions) {
   const tracked = async <T>(kind: RunReport['kind'], signal: AbortSignal | undefined, work: (signal: AbortSignal) => Promise<T>, workflow?: string): Promise<T> => {
     const budget = new TaskBudget(budgetLimits, signal);
     activeBudget = budget;
-    reports.start(id, kind, workflow);
+    reports.start(id, kind, workflow, workspace.root);
     if (kind !== 'verify') taskStartMessageCount = messages.length;
     lastReceipt = undefined;
     status = 'active';
