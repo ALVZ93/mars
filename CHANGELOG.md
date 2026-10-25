@@ -6,6 +6,7 @@ Todos los cambios relevantes se documentarán aquí. El proyecto sigue [Semantic
 
 ### Added
 
+- `openai-codex` lanza el binario de Codex con `--ignore-user-config`: plugins, servidores MCP y hooks del usuario no se cargan (turnos de ~4 min a ~7 s en una configuración de escritorio típica); la autenticación sigue gestionada por Codex en `CODEX_HOME`. La cancelación termina todo el árbol de procesos.
 - `bugfix` con prueba rojo→verde: fase `reproduce` con `declare_reproduction`, test que debe fallar antes y pasar después, y archivos de reproducción protegidos (ADR 008).
 - Contrato de tarea `contract.protect`: escrituras denegadas y detección por hash antes de cada verificación, sin reparación.
 - Recibos Markdown `--receipt FILE.md` / SDK `renderReceipt` con veredicto, prueba, contrato, checks y cambios.

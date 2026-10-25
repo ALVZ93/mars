@@ -1,5 +1,5 @@
 import type { AssistantMessage, AgentMessage, ModelEvent, ModelProvider, ModelRequest, ToolCall } from '../../core/src/index.js';
-import { Codex } from '@openai/codex-sdk';
+import { CodexCliRunner } from './codex-runner.js';
 import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 import { OpenAICompatibleProvider } from './openai.js';
@@ -258,7 +258,8 @@ export class OpenAICodexProvider implements ModelProvider {
   #threadSettings = '';
   constructor(credential: Credential, options: CodexProviderOptions = {}) {
     if (credential.provider !== this.id || credential.kind !== 'external' || credential.source !== 'codex-cli') throw new MarsError('AuthenticationError', 'A ChatGPT subscription connected through Codex is required.');
-    this.#codex = options.codex ?? new Codex();
+    // Bundled Codex CLI without the user's config.toml (plugins, MCP servers, hooks); auth stays with Codex.
+    this.#codex = options.codex ?? new CodexCliRunner();
   }
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
     checkAbort(signal);
