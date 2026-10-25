@@ -117,7 +117,10 @@ test('subscription transports keep provider credentials out of model input and p
   assert.match(prompt, /read_file/);
   assert.ok(!prompt.includes('accessToken'));
   assert.deepEqual(codexEvents.at(-1).usage, { inputTokens: 123, outputTokens: 7 });
-  assert.deepEqual(codexEvents.at(-1).message.toolCalls, [{ id: 'c1', name: 'read_file', arguments: { path: 'package.json' } }]);
+  const [parsedCall] = codexEvents.at(-1).message.toolCalls;
+  assert.deepEqual({ ...parsedCall, id: undefined }, { id: undefined, name: 'read_file', arguments: { path: 'package.json' } });
+  // Codex restarts ids per thread; MARS makes them unique so a later `c1` never collides with this one.
+  assert.match(parsedCall.id, /^c1-[0-9a-f]{8}$/);
 });
 
 test('Codex transport rejects malformed JSON tool arguments', async () => {

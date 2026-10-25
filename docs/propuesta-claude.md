@@ -93,6 +93,15 @@ Más providers, swarm/subagentes arbitrarios, chat UI genérica, marketplace, RA
 | D | `mars bench` + routing por evidencia (5) | Explota la independencia de proveedor |
 | E | `mars ui` (8) | Hace todo lo anterior visible y revisable |
 
+## Pendiente tras las tareas principales: coste por tarea
+
+Medido el 25-oct-2026 con `openai-codex:gpt-5.6-sol`. Cada llamada a Codex paga ~16k tokens de entrada fijos: el prompt base de Codex más las skills y el `AGENTS.md` del usuario. El ~90 % llega cacheado. MARS hace más llamadas que `codex exec` (una por paso de herramienta), así que reporta +13 % frente a la baseline en la tarea de paginación.
+
+1. Registrar `cached_input_tokens` en informes y recibos: hoy todo el input se cuenta como nuevo y se sobrestima el coste.
+2. Omitir la fase de revisión `verify` cuando MARS va a ejecutar los checks igualmente.
+3. Excluir skills y `AGENTS.md` del usuario en las llamadas de MARS a Codex, como ya se hace con MCP y plugins.
+4. Volver a ejecutar los evals y comparar el coste antes y después.
+
 ## Métrica norte
 
 **% de tareas que terminan en un recibo verificado (rojo→verde + contrato intacto + revisión sin bloqueos) y se mergean sin cambios humanos.** Medido con `bench` sobre tareas reales, publicado con fallos incluidos, como ya exige `ventajas-del-harness.md`.

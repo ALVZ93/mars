@@ -1,0 +1,117 @@
+// Runs the eval corpus against a model in two conditions and records one JSONL row per run.
+//   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
+//   baseline: the same bundled Codex binary, `codex exec` in workspace-write mode, same model and time limit
+// Then the hidden acceptance tests run on the resulting tree. Consumes real model quota.
+// Usage: node evals/run.mjs [--model openai-codex:gpt-5.6-sol] [--conditions mars,baseline] [task-id ...]
+import { spawnSync } from 'node:child_process';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile, appendFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const cli = path.join(here, '..', 'dist', 'apps', 'cli', 'src', 'index.js');
+const { findCodexBinary } = await import(new URL('../dist/packages/providers/src/codex-runner.js', import.meta.url).href);
+const { receiptVerdict } = await import(new URL('../dist/packages/sdk/src/receipt.js', import.meta.url).href);
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { model: { type: 'string', default: 'openai-codex:gpt-5.6-sol' }, conditions: { type: 'string', default: 'mars,baseline' }, timeout: { type: 'string', default: '900000' } } });
+const timeoutMs = Number(values.timeout);
+const [, codexModel] = values.model.split(':');
+
+const shell = command => process.platform === 'win32'
+  ? ['powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command]]
+  : ['/bin/sh', ['-c', command]];
+const sh = (command, cwd) => { const [file, args] = shell(command); const r = spawnSync(file, args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 120_000 }); return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` }; };
+const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).stdout.trim();
+const matches = (file, globs) => globs.some(glob => path.matchesGlob(file, glob));
+
+async function prepare(task) {
+  const work = await mkdtemp(path.join(tmpdir(), `mars-bench-${task.id}-`));
+  await cp(path.join(here, 'tasks', task.id, 'repo'), work, { recursive: true });
+  await writeFile(path.join(work, '.gitignore'), 'node_modules/\n.mars/\n.eval-hidden/\nreceipt.md\nreport.json\n');
+  await mkdir(path.join(work, '.mars'));
+  await writeFile(path.join(work, '.mars', 'config.json'), JSON.stringify({ verification: { commands: task.checks } }));
+  git(work, 'init', '-q'); git(work, 'config', 'user.email', 'bench@local'); git(work, 'config', 'user.name', 'bench'); git(work, 'config', 'core.autocrlf', 'false');
+  git(work, 'add', '-A'); git(work, 'commit', '-qm', 'initial');
+  return work;
+}
+
+function runMars(task, work) {
+  const started = Date.now();
+  const r = spawnSync(process.execPath, [cli, 'run', task.report, '--workflow', 'bugfix', '--isolate', '--model', values.model, '--allow-shell',
+    '--timeout', '300000', '--max-retries', '2', '--budget-requests', '60', '--budget-time', String(timeoutMs), '--receipt', 'receipt.md', '--report', 'report.json', '--no-animation'],
+    { cwd: work, encoding: 'utf8', windowsHide: true, timeout: timeoutMs + 120_000, input: '' });
+  return { seconds: (Date.now() - started) / 1000, exit: r.status, log: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
+async function finishMars(work, run) {
+  let report;
+  try { report = JSON.parse(await readFile(path.join(work, 'report.json'), 'utf8')).runs.at(-1); } catch { /* no report */ }
+  if (report?.isolation?.files.length) spawnSync(process.execPath, [cli, 'runs', 'apply', report.isolation.id], { cwd: work, encoding: 'utf8', windowsHide: true });
+  const verdict = report ? receiptVerdict(report) : { ok: false, label: 'No report' };
+  const tokens = report?.usage.reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0) ?? null;
+  return { status: report?.status ?? 'missing', error: report?.error, verdict: verdict.label, claimed: verdict.label === 'Fixed and proven', requests: report?.modelRequests ?? null, tokens, tokensKnown: report?.budget?.tokensKnown ?? false, repairs: report?.repairAttempts ?? 0, seconds: run.seconds };
+}
+
+function runBaseline(task, work) {
+  const { executable, pathDirs } = findCodexBinary();
+  const prompt = `${task.report}\n\nArregla el bug en este repositorio y añade o actualiza un test que lo cubra. Ejecuta los tests del proyecto (${task.checks.join(', ')}) antes de terminar. Si no puedes reproducir el problema, no cambies el código y explica por qué.`;
+  const env = { ...process.env, PATH: [...pathDirs, process.env.PATH ?? ''].join(path.delimiter) };
+  const started = Date.now();
+  const r = spawnSync(executable, ['exec', '--experimental-json', '--ignore-user-config', '--model', codexModel, '--sandbox', 'workspace-write', '--skip-git-repo-check',
+    '--config', 'model_reasoning_effort="low"', '--config', 'approval_policy="never"',
+    // --ignore-user-config drops the user's Windows sandbox mode; the default one rejects every command.
+    ...(process.platform === 'win32' ? ['--config', 'windows.sandbox="elevated"'] : []), '--cd', work], { cwd: work, env, input: prompt, encoding: 'utf8', windowsHide: true, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
+  let tokens = 0, turns = 0, completed = false, final = '';
+  for (const line of (r.stdout ?? '').split('\n')) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === 'turn.completed') { completed = true; turns++; tokens += (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0); }
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message') final = event.item.text ?? '';
+    } catch { /* not JSON */ }
+  }
+  return { status: completed ? 'completed' : r.error?.code === 'ETIMEDOUT' ? 'timeout' : 'failed', requests: turns, tokens: completed ? tokens : null, tokensKnown: completed, seconds: (Date.now() - started) / 1000, final: final.slice(0, 500) };
+}
+
+async function evaluate(task, work) {
+  const changed = [...new Set([...git(work, 'diff', '--name-only', 'HEAD').split('\n'), ...git(work, 'ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean))];
+  await cp(path.join(here, 'tasks', task.id, 'hidden'), path.join(work, '.eval-hidden'), { recursive: true });
+  const hidden = sh(task.hidden, work);
+  const sourceChanged = changed.filter(file => !/(^|\/)(tests?|__tests__)\/|\.test\.[^/]+$/.test(file));
+  return { hiddenPass: hidden.ok, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
+}
+
+const tasksDir = path.join(here, 'tasks');
+const ids = positionals.length ? positionals : (await readdir(tasksDir, { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+const conditions = values.conditions.split(',');
+const out = path.join(here, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+await mkdir(path.dirname(out), { recursive: true });
+for (const id of ids) {
+  const task = JSON.parse(await readFile(path.join(tasksDir, id, 'task.json'), 'utf8'));
+  for (const condition of conditions) {
+    const work = await prepare(task);
+    process.stderr.write(`▶ ${id} · ${condition}\n`);
+    let row;
+    try {
+      const marsRun = condition === 'mars' ? runMars(task, work) : undefined;
+      const result = marsRun ? await finishMars(work, marsRun) : runBaseline(task, work);
+      // Keep the evidence of every run next to the results for later diagnosis.
+      const artifacts = path.join(out.replace(/\.jsonl$/, ''), `${id}-${condition}`);
+      await mkdir(artifacts, { recursive: true });
+      for (const file of ['report.json', 'receipt.md']) await cp(path.join(work, file), path.join(artifacts, file)).catch(() => {});
+      await cp(path.join(work, '.mars', 'events.jsonl'), path.join(artifacts, 'events.jsonl')).catch(() => {});
+      await writeFile(path.join(artifacts, 'output.log'), marsRun ? marsRun.log : result.final ?? '');
+      const outcome = await evaluate(task, work);
+      // A "claim" for the baseline is changing source code; for MARS it is the Fixed and proven verdict.
+      const claimed = condition === 'mars' ? result.claimed : outcome.sourceChanged.length > 0;
+      row = { task: id, kind: task.kind, condition, model: values.model, ...result, ...outcome, claimed,
+        falseProof: condition === 'mars' ? result.claimed && !outcome.hiddenPass : null,
+        trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
+    } catch (error) {
+      row = { task: id, kind: task.kind, condition, model: values.model, status: 'harness-error', error: String(error?.message ?? error), at: new Date().toISOString() };
+    } finally { await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
+    await appendFile(out, `${JSON.stringify(row)}\n`);
+    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : 'FAIL'} · ${condition === 'mars' ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
+  }
+}
+process.stdout.write(`${out}\n`);

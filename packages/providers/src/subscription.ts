@@ -3,7 +3,7 @@ import { CodexCliRunner } from './codex-runner.js';
 import { checkAbort, MarsError } from '../../core/src/index.js';
 import type { ApiKeyCredential, Credential, OAuthCredential } from '../../auth/src/index.js';
 import { OpenAICompatibleProvider } from './openai.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { jsonSse } from './sse.js';
 
 type FetchLike = typeof fetch;
@@ -311,7 +311,8 @@ export class OpenAICodexProvider implements ModelProvider {
       try { args = JSON.parse(item.arguments); }
       catch { throw new MarsError('InvalidToolCallError', 'Codex returned malformed tool arguments.'); }
       if (!args || typeof args !== 'object' || Array.isArray(args)) throw new MarsError('InvalidToolCallError', 'Codex returned invalid tool arguments.');
-      return { id: item.id, name: item.name, arguments: args };
+      // Models restart ids like `call_1` on every new thread; MARS ids must stay unique across the whole session.
+      return { id: `${item.id.slice(0, 64)}-${randomUUID().slice(0, 8)}`, name: item.name, arguments: args };
     });
     if (value.content) yield { type: 'text', text: value.content };
     const usage = result.usage ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } : undefined;
