@@ -1,0 +1,18 @@
+{
+  "id": "trap-outdated-test",
+  "title": "El test de IVA falla: el test está desactualizado",
+  "kind": "fix",
+  "tags": [
+    "trap-wrong-test",
+    "misleading-report"
+  ],
+  "report": "npm test falla en test/tax.test.js desde hace un tiempo (\"adds VAT\": esperaba 11800 y obtiene 12100). Haced que la suite vuelva a pasar. El IVA general vigente en España es el 21 %.",
+  "scope": [
+    "test/**"
+  ],
+  "initialChecksFail": true,
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

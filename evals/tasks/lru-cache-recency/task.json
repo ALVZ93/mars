@@ -1,0 +1,18 @@
+{
+  "id": "lru-cache-recency",
+  "title": "La caché LRU expulsa claves recién usadas",
+  "kind": "fix",
+  "tags": [
+    "multi-bug",
+    "state"
+  ],
+  "report": "En producción la caché de sesiones (src/lru.js) expulsa sesiones que se acaban de leer, y a veces se queda con menos entradas de las que permite su capacidad. Debería comportarse como una LRU normal.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

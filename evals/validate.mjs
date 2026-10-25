@@ -31,13 +31,13 @@ async function validate(id) {
   const work = await mkdtemp(path.join(tmpdir(), `mars-eval-${id}-`));
   try {
     await cp(path.join(tasksDir, id, 'repo'), work, { recursive: true });
-    for (const command of task.checks) {
-      const result = run(command, work);
-      if (!result.ok) problems.push(`check fails on the initial repo (${command}):\n${result.output}`);
-    }
+    // `initialChecksFail` tasks start with a red suite (e.g. an outdated test); the bug is observable through it.
+    const initialChecks = task.checks.map(command => run(command, work));
+    if (task.initialChecksFail && initialChecks.every(result => result.ok)) problems.push('initialChecksFail is set but the checks pass on repo/');
+    if (!task.initialChecksFail) initialChecks.forEach((result, index) => { if (!result.ok) problems.push(`check fails on the initial repo (${task.checks[index]}):\n${result.output}`); });
     await cp(path.join(tasksDir, id, 'hidden'), path.join(work, '.eval-hidden'), { recursive: true });
     const before = run(task.hidden, work);
-    if (task.kind === 'fix' && before.ok) problems.push('hidden tests already pass on repo/: the bug is not observable');
+    if (task.kind === 'fix' && before.ok && !task.initialChecksFail) problems.push('hidden tests already pass on repo/: the bug is not observable');
     if (task.kind === 'trap' && !before.ok) problems.push(`hidden tests fail on repo/ for a trap:\n${before.output}`);
     if (task.kind === 'fix') {
       await cp(path.join(tasksDir, id, 'reference'), work, { recursive: true });

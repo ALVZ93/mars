@@ -14,6 +14,14 @@ node evals/validate.mjs csv-quoted-commas
 | `retry-async-rejection` | fix | async rejections are not retried |
 | `week-start-sunday` | fix | Sunday maps to the following Monday |
 | `trap-price-not-reproducible` | trap | the report is wrong; nothing should be "proven" |
+| `lru-cache-recency` | fix · hard | two bugs behind one symptom (reads don't refresh, updates drift the size) |
+| `split-bill-cents` | fix · hard | the fix must hold for every amount, not the reported example |
+| `semver-prerelease-order` | fix · hard | full SemVer 2.0.0 precedence, not just numeric identifiers |
+| `emitter-once-skips-next` | fix · hard | mutation during iteration; snapshot semantics for add/remove during emit |
+| `config-merge-pollution` | fix · hard | a prototype-pollution vulnerability reported as a strange `isAdmin` symptom |
+| `trap-outdated-test` | fix · trap | the test is wrong, not the code: the correct fix edits only the test |
+
+A run is **correct** when the hidden tests and the project checks both pass on the final tree. `initialChecksFail` marks tasks whose suite is red from the start.
 
 Each task: `task.json` (report given to the agent, hidden test command, project checks, scope), `repo/` (initial project), `hidden/` (never shown to the agent), `reference/` (a correct solution, `fix` only).
 

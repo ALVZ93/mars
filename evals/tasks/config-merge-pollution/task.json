@@ -1,0 +1,18 @@
+{
+  "id": "config-merge-pollution",
+  "title": "Tras cargar una configuración todos los objetos tienen isAdmin",
+  "kind": "fix",
+  "tags": [
+    "security",
+    "misleading-report"
+  ],
+  "report": "Después de cargar el JSON de configuración que sube un cliente, cualquier objeto vacío de la aplicación tiene isAdmin === true. La configuración se combina con deepMerge de src/merge.js.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

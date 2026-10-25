@@ -77,8 +77,11 @@ async function evaluate(task, work) {
   const changed = [...new Set([...git(work, 'diff', '--name-only', 'HEAD').split('\n'), ...git(work, 'ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean))];
   await cp(path.join(here, 'tasks', task.id, 'hidden'), path.join(work, '.eval-hidden'), { recursive: true });
   const hidden = sh(task.hidden, work);
+  await rm(path.join(work, '.eval-hidden'), { recursive: true, force: true });
+  // A fix is correct only if the hidden tests and the project's own checks both pass on the final tree.
+  const checksPass = task.checks.every(command => sh(command, work).ok);
   const sourceChanged = changed.filter(file => !/(^|\/)(tests?|__tests__)\/|\.test\.[^/]+$/.test(file));
-  return { hiddenPass: hidden.ok, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
+  return { hiddenPass: hidden.ok, checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
 }
 
 const tasksDir = path.join(here, 'tasks');
@@ -105,7 +108,7 @@ for (const id of ids) {
       // A "claim" for the baseline is changing source code; for MARS it is the Fixed and proven verdict.
       const claimed = condition === 'mars' ? result.claimed : outcome.sourceChanged.length > 0;
       row = { task: id, kind: task.kind, condition, model: values.model, ...result, ...outcome, claimed,
-        falseProof: condition === 'mars' ? result.claimed && !outcome.hiddenPass : null,
+        falseProof: condition === 'mars' ? result.claimed && !outcome.correct : null,
         trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
     } catch (error) {
       row = { task: id, kind: task.kind, condition, model: values.model, status: 'harness-error', error: String(error?.message ?? error), at: new Date().toISOString() };

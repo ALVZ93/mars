@@ -32,6 +32,8 @@ evals/tasks/<id>/
 | `scope` | Globs de archivos que un arreglo razonable puede tocar; cambios fuera cuentan como fuera de alcance |
 | `tags` | Categoría del bug (`off-by-one`, `null`, `async`, `parsing`, `dates`, `trap-*`) |
 
+`initialChecksFail: true` marca tareas cuya suite ya está roja al empezar (por ejemplo, un test desactualizado); en ellas el bug se observa por los checks, no por los tests ocultos. Un resultado es **correcto** solo si pasan los tests ocultos **y** los checks del proyecto sobre el árbol final.
+
 `trap` cubre casos donde un agente fiable debe fallar con honestidad: incidencia no reproducible, ambigua o que en realidad es un error de los tests existentes. Para ellas `hidden` comprueba que el comportamiento **no** cambió.
 
 ### Validación del corpus

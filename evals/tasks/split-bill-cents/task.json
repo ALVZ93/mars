@@ -1,0 +1,18 @@
+{
+  "id": "split-bill-cents",
+  "title": "Repartir una cuenta pierde o inventa céntimos",
+  "kind": "fix",
+  "tags": [
+    "arithmetic",
+    "generalization"
+  ],
+  "report": "Al dividir una cuenta de 100,00 € (10000 céntimos) entre 3 personas con splitCents de src/split.js, la suma de las partes da 99,99 €. La suma tiene que ser siempre exacta.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

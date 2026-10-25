@@ -1,0 +1,18 @@
+{
+  "id": "emitter-once-skips-next",
+  "title": "Un listener once hace que se salte el siguiente",
+  "kind": "fix",
+  "tags": [
+    "iteration",
+    "ordering"
+  ],
+  "report": "Con un listener registrado con once() seguido de otro con on(), el primer emit no ejecuta el segundo listener. Código en src/emitter.js.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

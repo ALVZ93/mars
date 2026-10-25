@@ -1,0 +1,18 @@
+{
+  "id": "semver-prerelease-order",
+  "title": "Las prereleases se ordenan como texto",
+  "kind": "fix",
+  "tags": [
+    "spec",
+    "edge-cases"
+  ],
+  "report": "En el listado de versiones, 1.0.0-alpha.10 aparece antes que 1.0.0-alpha.2. compareVersions (src/semver.js) debería seguir la precedencia de SemVer 2.0.0.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}
