@@ -190,6 +190,8 @@ export interface VerificationOptions {
   commands?: readonly string[];
   /** Commands that always run first (e.g. a reproduction test), before configured or detected checks. */
   prepend?: readonly string[];
+  /** Runs after every command (e.g. a contract check); throwing aborts the remaining checks. */
+  afterEach?: () => Promise<void>;
 }
 
 /** Run configured commands or known package scripts; every command remains behind the shell permission boundary. */
@@ -234,6 +236,7 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
       passed = false;
     }
     checks.push({ name, command, exitCode, passed, output: truncate(output), ...(failure ? { error: failure } : {}) });
+    await options.afterEach?.();
     if (!passed) break;
   }
   const passed = checks.length === planned.length && checks.every(check => check.passed);

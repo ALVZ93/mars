@@ -5,6 +5,10 @@ import type { RunReport } from './reports.js';
 // Every dynamic value is redacted and confined to an inline code span or a fenced block, so file names,
 // commands and check output can neither inject Markdown/HTML into a PR nor publish recognisable credentials.
 const code = (value: string) => `\`${redactKnowledgeSecrets(value).replaceAll('`', 'ˋ').replace(/[\s\u0000-\u001f]+/g, ' ').slice(0, 300)}\``;
+/** Plain text for headings and prose: no control characters, Markdown or HTML syntax. */
+const text = (value: string) => redactKnowledgeSecrets(value).replace(/[\s\u0000-\u001f]+/g, ' ').replace(/[\\`*_#<>[\]|~!]/g, '').trim().slice(0, 120);
+/** Inline code inside a table cell: GFM splits cells on `|` even within code spans. */
+const cell = (span: string) => span.replaceAll('|', '\\|');
 const block = (value: string) => ['~~~text', redactKnowledgeSecrets(value).replaceAll('~~~', '~ ~ ~').slice(0, 2_000).trimEnd(), '~~~'];
 const seconds = (ms: number) => ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`;
 
@@ -49,14 +53,15 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
     const c = (value: string) => code(clean(value));
     const b = (value: string) => block(clean(value));
     const verdict = receiptVerdict(report);
-    lines.push(`## ${verdict.ok ? '✅' : '❌'} ${options.title ?? 'MARS'} — ${verdict.label}`, '');
-    lines.push(`${report.kind}${report.workflow ? ` \`${report.workflow}\`` : ''} · ${report.startedAt.slice(0, 19).replace('T', ' ')} UTC · ${seconds(report.durationMs)} · run \`${report.id.slice(0, 8)}\``, '');
+    lines.push(`## ${verdict.ok ? '✅' : '❌'} ${text(options.title ?? 'MARS') || 'MARS'} — ${verdict.label}`, '');
+    lines.push(`${report.kind}${report.workflow ? ` ${c(report.workflow)}` : ''} · ${report.startedAt.slice(0, 19).replace('T', ' ')} UTC · ${seconds(report.durationMs)} · run ${c(report.id.slice(0, 8))}`, '');
 
     if (report.proof) {
       const { proof } = report;
       lines.push('### Proof', '');
       lines.push(`Reproduction: ${c(proof.command)} (${proof.files.map(c).join(', ')})`, '');
       lines.push(`- Before the fix: ${proof.red.exitCode === null ? 'did not run' : `failed with exit ${proof.red.exitCode}`} — expected`);
+      if (proof.control) lines.push(`- With the test emptied: exit ${proof.control.exitCode ?? '?'} — the failure comes from the test`);
       lines.push(`- After the fix: ${proof.green ? `passed (exit ${proof.green.exitCode})` : 'not passing'}`);
       lines.push('', '<details><summary>Failure before the fix</summary>', '', ...b(proof.red.output || '(no output)'), '', '</details>', '');
     }
@@ -71,9 +76,9 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
     const last = report.verifications.at(-1);
     if (last) {
       lines.push('### Checks', '', '| Command | Result |', '| --- | --- |');
-      for (const check of last.report.checks) lines.push(`| ${c(check.command)} | ${check.passed ? '✅ passed' : `❌ ${check.error ?? `exit ${check.exitCode ?? '?'}`}`} |`);
+      for (const check of last.report.checks) lines.push(`| ${cell(c(check.command))} | ${check.passed ? '✅ passed' : `❌ ${check.error ?? `exit ${check.exitCode ?? '?'}`}`} |`);
       const skipped = last.report.plannedCommands.slice(last.report.checks.length);
-      for (const command of skipped) lines.push(`| ${c(command)} | not run |`);
+      for (const command of skipped) lines.push(`| ${cell(c(command))} | not run |`);
       if (last.report.reason) lines.push('', ...b(last.report.reason));
       lines.push('');
     }

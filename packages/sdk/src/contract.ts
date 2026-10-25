@@ -95,6 +95,26 @@ export function unrelatedFailure(exitCode: number | null, output: string): boole
   return exitCode === 127 || exitCode === 9009 || UNRELATED_FAILURE.test(output);
 }
 
+const INTERPRETERS = /^(node|nodejs|deno|bun|python[\d.]*|py|ruby|perl|php|sh|bash|zsh|dash|pwsh|powershell)(\.exe)?$/i;
+const INLINE_FLAGS = /^(-e|--eval|-p|--print|-c|--command|-command|-encodedcommand)(=.*)?$/i;
+/** True when the command runs inline code (`node -e`, `python -c`, `sh -c`…) instead of a test file. */
+export function runsInlineCode(command: string): boolean {
+  const tokens = command.match(/"[^"]*"|'[^']*'|[^\s"']+/g) ?? [];
+  const interpreter = path.basename(tokens[0]?.replace(/^["']|["']$/g, '') ?? '');
+  return INTERPRETERS.test(interpreter) && tokens.slice(1).some(token => INLINE_FLAGS.test(token));
+}
+
+/** Conventional test locations and names across ecosystems (tests/, __tests__/, *.test.*, *_test.go, test_*.py…). */
+export function isTestPath(file: string): boolean {
+  const value = normalize(file);
+  return /(^|\/)(tests?|__tests__|specs?)\//i.test(value) || /[._-](test|spec)s?\.[^/.]+$/i.test(value) || /(^|\/)test_[^/]+\.py$/i.test(value);
+}
+
+/** Output with timings and counters removed, to compare two runs of the same command. */
+export function outputShape(output: string): string {
+  return output.replace(/\d+(?:[.,]\d+)?\s*(?:ms|s|sec|seconds)\b/gi, '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
+}
+
 export interface ReproductionDeclaration { command: string; files: string[] }
 
 /** Tool offered only during a reproduction phase; the agent declares how to run its failing test. */
@@ -111,7 +131,7 @@ export function reproductionTool(onDeclare: (value: ReproductionDeclaration) => 
     async execute(input) {
       const value = input as ReproductionDeclaration;
       onDeclare({ command: value.command.trim(), files: value.files.map(normalize) });
-      return 'Reproduction declared. Stop now; MARS will run it and expects it to fail before the fix.';
+      return 'Reproduction declared. Do not call more tools: reply with one short sentence describing the failing test. MARS runs it next and expects it to fail before the fix.';
     },
   };
 }

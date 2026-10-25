@@ -41,6 +41,28 @@ Fases: `inspect` (solo lectura) → `reproduce` → `implement` → `verify`.
 - Los checks detectados no repiten el comando de reproducción.
 - El recibo escapa todos los valores dinámicos (spans de código y bloques `~~~`), redacta credenciales reconocibles y revalida su destino justo antes de escribir.
 
+### 5. Segunda revisión de Codex (`1e6b720`, `537c812`)
+
+- **Control con el test vaciado.** Tras el rojo, MARS vacía temporalmente los tests declarados y repite el comando. Si falla igual (mismo exit y misma salida sin tiempos ni contadores), el fallo no viene del test y la reproducción se rechaza. Cierra comandos que nombran el test sin depender de él (`node otro.mjs test.mjs`, umbrales de tiempo). Los tests se restauran byte a byte y el contrato lo comprueba.
+- **Sin código inline.** `node -e`, `python -c`, `sh -c` y equivalentes no valen como reproducción.
+- **La fase de reproducción solo escribe tests.** Solo puede escribir archivos nuevos o rutas de test convencionales (`tests/`, `__tests__/`, `*.test.*`, `*_test.*`, `test_*.py`…). Shell y MCP se deniegan aunque el workflow los permita. Así no puede romper código de producción para fabricar un rojo.
+- **Contrato entre comandos y verde final.** El contrato se comprueba después de cada comando de verificación, no solo alrededor del lote. Al terminar todas las fases y checks, MARS repite la reproducción sobre el árbol entregado: si ya no pasa, el workflow falla. El verde del recibo es siempre el de ese árbol.
+- **Recibo.** Título, workflow e IDs pasan por escape. Los `|` de comandos no rompen las tablas. El recibo muestra el resultado del control.
+- **Runner de Codex.**
+  - La cancelación espera a que todo el árbol de procesos termine antes de resolver y escala a `SIGKILL`.
+  - Un cierre temprano de stdin (`EPIPE`) rechaza el turno en vez de tumbar MARS.
+  - JSONL inválido o un turno sin `turn.completed` se rechazan.
+  - Se conserva `cli_auth_credentials_store` del usuario para que `exec` lea las credenciales del mismo almacén que `codex login`.
+  - Tests propios con un CLI simulado (`tests/codex-runner.test.mjs`).
+
+- **Respuesta vacía tras declarar.** Algunos modelos terminan la fase de reproducción con un mensaje vacío; si ya hay una declaración válida, la fase continúa. Sin declaración sigue siendo un fallo del proveedor.
+- **Validación real.** `bugfix` con `openai-codex:gpt-5.6-sol` sobre un off-by-one sembrado, con `--isolate`: *Fixed and proven* en 86 s, control con el test vaciado en exit 0.
+
+Límites conocidos:
+- `--ignore-user-config` no desactiva `AGENTS.md`, skills ni `.rules` del usuario.
+- Las herramientas nativas de Codex (sandbox de solo lectura, sin aprobaciones) solo están limitadas por la configuración del hilo y el prompt.
+- El control detecta fallos independientes del contenido del test, no un test escrito para fallar por otra razón que sí depende de su contenido.
+
 ## Consecuencias
 
 - Un `bugfix` sin un test automatizable ya no puede completarse; para esos casos queda `feature`.

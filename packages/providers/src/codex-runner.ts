@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -46,15 +47,32 @@ export function findCodexBinary(): { executable: string; pathDirs: string[] } {
   throw new Error('Unable to locate the bundled Codex CLI binary.');
 }
 
-/** Ends the Codex process and every child it started (sandbox helpers, shells). */
-function terminate(pid: number | undefined): void {
-  if (!pid) return;
+const wait = (promise: Promise<unknown>, ms: number) => Promise.race([promise.then(() => true), new Promise<boolean>(resolve => setTimeout(resolve, ms, false).unref())]);
+
+/** Ends the Codex process and every child it started (sandbox helpers, shells), and waits until it is gone. */
+async function terminate(child: ChildProcess, closed: Promise<unknown>): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
     const taskkill = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
-    spawn(taskkill, ['/pid', String(pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
+    await new Promise<void>(resolve => spawn(taskkill, ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).on('error', () => resolve()).on('close', () => resolve()));
   } else {
-    try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+    try { process.kill(-child.pid, 'SIGKILL'); } catch { /* not a group leader */ }
   }
+  if (await wait(closed, 5_000)) return;
+  child.kill('SIGKILL');
+  await wait(closed, 2_000);
+}
+
+/**
+ * `--ignore-user-config` also skips the credential backend chosen in config.toml. Keep that single setting so
+ * `exec` reads credentials from the same store as `codex login` (file, keyring or auto).
+ */
+function credentialStoreOverride(): string[] {
+  try {
+    const config = readFileSync(path.join(process.env.CODEX_HOME ?? path.join(homedir(), '.codex'), 'config.toml'), 'utf8');
+    const store = config.match(/^\s*cli_auth_credentials_store\s*=\s*"(file|keyring|auto|ephemeral)"\s*$/m)?.[1];
+    return store ? ['--config', `cli_auth_credentials_store="${store}"`] : [];
+  } catch { return []; }
 }
 
 export class CodexCliRunner {
@@ -69,7 +87,7 @@ export class CodexCliRunner {
         const schemaPath = path.join(schemaDir, 'schema.json');
         try {
           await writeFile(schemaPath, JSON.stringify(turn.outputSchema), 'utf8');
-          const args = ['exec', '--experimental-json', '--ignore-user-config'];
+          const args = ['exec', '--experimental-json', '--ignore-user-config', ...credentialStoreOverride()];
           if (options.model) args.push('--model', options.model);
           if (options.threadSource && !threadId) args.push('--thread-source', options.threadSource);
           if (options.sandboxMode) args.push('--sandbox', options.sandboxMode);
@@ -84,19 +102,24 @@ export class CodexCliRunner {
           const { executable, pathDirs } = this.#binary();
           const env: NodeJS.ProcessEnv = { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ?? 'codex_sdk_ts' };
           if (pathDirs.length) env.PATH = [...pathDirs, env.PATH ?? env.Path ?? ''].join(path.delimiter);
-          return await this.#turn(executable, args, env, input, turn.signal, id => { threadId = id; });
+          return await this.#runTurn(executable, args, env, input, turn.signal, id => { threadId = id; });
         } finally { await rm(schemaDir, { recursive: true, force: true }); }
       },
     };
   }
 
-  #turn(executable: string, args: string[], env: NodeJS.ProcessEnv, input: string, signal: AbortSignal, onThread: (id: string) => void): Promise<CodexTurnResult> {
+  #runTurn(executable: string, args: string[], env: NodeJS.ProcessEnv, input: string, signal: AbortSignal, onThread: (id: string) => void): Promise<CodexTurnResult> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) { reject(new Error('Codex turn cancelled.')); return; }
       const child = spawn(executable, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+      const closed = new Promise<number | null>(done => child.once('close', code => done(code)));
       let finalResponse = '';
       let usage: CodexTurnResult['usage'] = null;
+      let completed = false;
       let failure: string | undefined;
+      let invalid = false;
+      let inputError: Error | undefined;
+      let cancelled = false;
       let stderr = '';
       let settled = false;
       const finish = (error?: Error) => {
@@ -105,21 +128,28 @@ export class CodexCliRunner {
         signal.removeEventListener('abort', abort);
         if (error) reject(error); else resolve({ finalResponse, usage });
       };
-      const abort = () => { terminate(child.pid); finish(new Error('Codex turn cancelled.')); };
+      // Settles only after the process tree is gone, so callers never clean up under a live Codex.
+      const abort = () => { cancelled = true; void terminate(child, closed).then(() => finish(new Error('Codex turn cancelled.'))); };
       signal.addEventListener('abort', abort, { once: true });
-      child.on('error', error => finish(error));
+      child.on('error', error => { if (!cancelled) finish(error); });
+      child.stdin!.on('error', error => { inputError = error; });
       child.stderr!.setEncoding('utf8').on('data', chunk => { stderr = (stderr + chunk).slice(-8_000); });
       createInterface({ input: child.stdout!, crlfDelay: Infinity }).on('line', line => {
+        if (!line.trim()) return;
         let event: { type?: string; thread_id?: string; item?: { type?: string; text?: string }; usage?: { input_tokens: number; output_tokens: number }; error?: { message?: string } };
-        try { event = JSON.parse(line); } catch { return; }
+        try { event = JSON.parse(line); } catch { invalid = true; return; }
         if (event.type === 'thread.started' && event.thread_id) onThread(event.thread_id);
         else if (event.type === 'item.completed' && event.item?.type === 'agent_message') finalResponse = event.item.text ?? '';
-        else if (event.type === 'turn.completed' && event.usage) usage = { input_tokens: event.usage.input_tokens, output_tokens: event.usage.output_tokens };
+        else if (event.type === 'turn.completed') { completed = true; if (event.usage) usage = { input_tokens: event.usage.input_tokens, output_tokens: event.usage.output_tokens }; }
         else if (event.type === 'turn.failed') failure = event.error?.message ?? 'Codex turn failed.';
       });
-      child.on('close', code => {
+      void closed.then(code => {
+        if (cancelled) return;
         if (failure) finish(new Error(failure));
+        else if (invalid) finish(new Error('Codex produced invalid JSONL output.'));
         else if (code !== 0) finish(new Error(`Codex exited with code ${code ?? 'unknown'}: ${stderr.trim().split('\n').slice(-3).join(' ')}`));
+        else if (inputError) finish(new Error(`Codex closed its input early: ${inputError.message}`));
+        else if (!completed) finish(new Error('Codex ended without completing the turn.'));
         else finish();
       });
       child.stdin!.end(input);

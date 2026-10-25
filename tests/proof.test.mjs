@@ -197,9 +197,9 @@ test('a phase after verification invalidates the proof; two reproduction phases 
     ] },
   ]);
   const instance = await mars(t, root, [...reproduceSteps.slice(1), write('calc.mjs', FIXED), answer(), answer(), write('calc.mjs', BUGGY), answer()], { workflows });
-  await instance.runWorkflow('late', 'bug');
+  await assert.rejects(instance.runWorkflow('late', 'bug'), /no longer passes on the final tree/);
   assert.equal(instance.lastRun.proof.green, undefined);
-  assert.match(renderReceipt([instance.lastRun]), /❌ MARS — Not proven/);
+  assert.match(renderReceipt([instance.lastRun]), /❌ MARS — Failed/);
   await assert.rejects(instance.runWorkflow('twice', 'bug'), /at most one reproduction phase/);
 });
 
@@ -230,6 +230,84 @@ test('receipts escape dynamic values and redact credentials', () => {
   assert.doesNotMatch(receipt, /^~~~\n# fake heading/m);
   assert.equal((receipt.match(/^~~~/gm) ?? []).length % 2, 0, 'fences stay balanced');
   assert.match(receipt, /✅ MARS — Fixed and proven/);
+});
+
+// Regressions from the Codex review of 1e6b720.
+test('a command that names the test but does not depend on it is rejected', async t => {
+  await t.test('inline code', async t => {
+    const root = await project(t);
+    const instance = await mars(t, root, [...reproduceSteps.slice(0, 2), declare('node -e "process.exit(1)" tests/calc.test.mjs', ['tests/calc.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /cannot run inline code/);
+  });
+  await t.test('failure independent of the test content', async t => {
+    const root = await project(t);
+    await writeFile(path.join(root, 'always-fail.mjs'), 'process.exit(1);\n');
+    const instance = await mars(t, root, [...reproduceSteps.slice(0, 2), declare('node always-fail.mjs tests/calc.test.mjs', ['tests/calc.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /fails the same way with its tests emptied/);
+    assert.equal(await readFile(path.join(root, 'tests', 'calc.test.mjs'), 'utf8'), TEST, 'the control run restores the test');
+  });
+  await t.test('genuine failure records the control run', async t => {
+    const root = await project(t);
+    const instance = await mars(t, root, [...reproduceSteps, write('calc.mjs', FIXED), answer(), answer()]);
+    await instance.runWorkflow('bugfix', 'bug');
+    assert.equal(instance.lastRun.proof.control.exitCode, 0);
+    assert.match(renderReceipt([instance.lastRun]), /With the test emptied: exit 0/);
+  });
+});
+
+test('the reproduction phase can only write tests: no production edits, shell or MCP', async t => {
+  const root = await project(t);
+  const sabotage = 'export const add = (a, b) => a + b + 1;\n';
+  const instance = await mars(t, root, [answer(), write('calc.mjs', sabotage), call('shell', { command: 'node --version', cwd: null, timeout: null }), ...reproduceSteps.slice(1), write('calc.mjs', FIXED), answer(), answer()]);
+  await instance.runWorkflow('bugfix', 'bug');
+  assert.equal(instance.lastRun.toolErrors, 2);
+  assert.match(instance.lastRun.proof.red.output, /expected 5, got -1/, 'red comes from the original bug, not from sabotage');
+});
+
+test('a check that reintroduces the bug or swaps a protected file between commands is caught', async t => {
+  await t.test('bug reintroduced by a later check', async t => {
+    const root = await project(t);
+    const regress = async (command, cwd, timeout, signal) => {
+      const result = await executeShell(command, cwd, timeout, signal);
+      if (command === 'node --version') await writeFile(path.join(cwd, 'calc.mjs'), BUGGY);
+      return result;
+    };
+    const instance = await mars(t, root, [...reproduceSteps, write('calc.mjs', FIXED), answer(), answer()], { shellExecutor: regress });
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /no longer passes on the final tree/);
+  });
+  await t.test('protected file swapped and restored across commands', async t => {
+    const root = await project(t);
+    const swap = async (command, cwd, timeout, signal) => {
+      if (command === 'node tests/calc.test.mjs' && (await readFile(path.join(cwd, 'calc.mjs'), 'utf8')) === FIXED) await writeFile(path.join(cwd, 'tests', 'calc.test.mjs'), 'process.exit(0);\n');
+      const result = await executeShell(command, cwd, timeout, signal);
+      if (command === 'node --version') await writeFile(path.join(cwd, 'tests', 'calc.test.mjs'), TEST);
+      return result;
+    };
+    const instance = await mars(t, root, [...reproduceSteps, write('calc.mjs', FIXED), answer(), answer()], { shellExecutor: swap });
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /Task contract violated/);
+  });
+});
+
+test('an empty reply after a valid declaration does not fail the reproduction phase', async t => {
+  const root = await project(t);
+  const instance = await mars(t, root, [answer('inspected'), write('tests/calc.test.mjs', TEST), declare('node tests/calc.test.mjs', ['tests/calc.test.mjs']), answer(''), write('calc.mjs', FIXED), answer('fixed'), answer('reviewed')]);
+  await instance.runWorkflow('bugfix', 'bug');
+  assert.match(renderReceipt([instance.lastRun]), /Fixed and proven/);
+
+  const root2 = await project(t);
+  const undeclared = await mars(t, root2, [answer('inspected'), write('tests/calc.test.mjs', TEST), answer('')]);
+  await assert.rejects(undeclared.runWorkflow('bugfix', 'bug'), { code: 'ProviderUnavailableError' });
+});
+
+test('receipts escape the title, workflow ids and table separators', () => {
+  const report = { schemaVersion: 1, id: 'run-3', sessionId: 's', kind: 'workflow', workflow: 'x`\n# Injected', startedAt: new Date().toISOString(), durationMs: 1, status: 'completed',
+    models: [], modelRequests: 0, modelRetries: 0, toolCalls: 0, toolErrors: 0, permissionDenials: 0, repairAttempts: 0, usage: [], verificationStatus: 'passed',
+    verifications: [{ phase: 'v', attempt: 0, report: { workspace: '.', plannedCommands: ['a | b'], checks: [{ name: 'c', command: 'a | b', exitCode: 0, passed: true, output: '' }], passed: true, verified: true } }] };
+  const receipt = renderReceipt([report], { title: 'Team\n# Evil <script>' });
+  assert.doesNotMatch(receipt, /^# (Injected|Evil)/m);
+  assert.doesNotMatch(receipt, /<script>/);
+  const row = receipt.split('\n').find(line => line.includes('a ') && line.startsWith('|'));
+  assert.equal(row.split(/(?<!\\)\|/).length, 4, `table row keeps two cells: ${row}`);
 });
 
 test('receipts print paths relative to the execution root and the home directory as ~', async () => {

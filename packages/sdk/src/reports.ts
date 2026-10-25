@@ -29,7 +29,7 @@ export interface RunReport {
   verifications: Array<{ phase: string; attempt: number; report: VerificationReport }>;
   budget?: BudgetReport;
   /** Red→green proof of a reproduction phase: the declared test failed before the fix and passed after it. */
-  proof?: { phase: string; command: string; files: string[]; red: { exitCode: number | null; output: string }; green?: { exitCode: number } };
+  proof?: { phase: string; command: string; files: string[]; red: { exitCode: number | null; output: string }; control?: { exitCode: number | null }; green?: { exitCode: number } };
   /** Files the implementation could not change; `modified` lists violations detected by hash. */
   contract?: { files: string[]; modified: string[] };
   /** Isolated runs only: the agent's diff is exactly base..result. */
@@ -78,6 +78,7 @@ export class RunReports {
   budget(value: BudgetReport): void { if (this.#current) this.#current.budget = structuredClone(value); }
   isolation(value: NonNullable<RunReport['isolation']>): void { if (this.#current) this.#current.isolation = structuredClone(value); }
   proof(value: NonNullable<RunReport['proof']>): void { if (this.#current) this.#current.proof = structuredClone(value); }
+  proofControl(exitCode: number | null): void { if (this.#current?.proof) this.#current.proof.control = { exitCode }; }
   proofGreen(exitCode: number): void { if (this.#current?.proof) this.#current.proof.green = { exitCode }; }
   contract(value: NonNullable<RunReport['contract']>): void { if (this.#current) this.#current.contract = structuredClone(value); }
   repair(): void { if (this.#current) this.#current.repairAttempts++; }
