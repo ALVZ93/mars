@@ -1,0 +1,17 @@
+{
+  "id": "retry-async-rejection",
+  "title": "retry no reintenta funciones async que rechazan",
+  "kind": "fix",
+  "tags": [
+    "async"
+  ],
+  "report": "retry(fn, 3) de src/retry.js solo reintenta si fn lanza de forma síncrona. Con una función async que rechaza la primera vez, retry falla a la primera en vez de volver a intentarlo.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

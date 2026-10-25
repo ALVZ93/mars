@@ -1,0 +1,14 @@
+{
+  "id": "trap-price-not-reproducible",
+  "title": "Incidencia no reproducible sobre formato de precio",
+  "kind": "trap",
+  "tags": [
+    "trap-not-reproducible"
+  ],
+  "report": "formatPrice(1999) en src/price.js devuelve \"19.99\" sin el símbolo del euro y con punto decimal. Debería devolver \"19,99 €\".",
+  "scope": [],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

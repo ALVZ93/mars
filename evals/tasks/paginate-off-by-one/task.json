@@ -1,0 +1,17 @@
+{
+  "id": "paginate-off-by-one",
+  "title": "Paginación 1-based devuelve la página siguiente",
+  "kind": "fix",
+  "tags": [
+    "off-by-one"
+  ],
+  "report": "paginate(items, 1, 2) devuelve [3, 4] en lugar de [1, 2]. Según la documentación de src/paginate.js las páginas empiezan en 1.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

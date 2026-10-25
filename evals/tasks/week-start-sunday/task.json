@@ -1,0 +1,17 @@
+{
+  "id": "week-start-sunday",
+  "title": "startOfWeek de un domingo devuelve el lunes siguiente",
+  "kind": "fix",
+  "tags": [
+    "dates"
+  ],
+  "report": "El informe semanal agrupa mal los domingos: startOfWeek(domingo 2026-10-25) devuelve el lunes 26 en vez del lunes 19. Las semanas van de lunes a domingo (ISO). Código en src/week.js.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}

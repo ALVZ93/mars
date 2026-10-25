@@ -1,0 +1,17 @@
+{
+  "id": "csv-quoted-commas",
+  "title": "CSV parte campos entrecomillados que contienen comas",
+  "kind": "fix",
+  "tags": [
+    "parsing"
+  ],
+  "report": "Al importar el CSV de clientes, la línea `1,\"García, Ana\",Madrid` se convierte en 4 columnas en vez de 3: el nombre entre comillas se parte por la coma. parseCsvLine está en src/csv.js.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "checks": [
+    "npm test"
+  ]
+}
