@@ -30,9 +30,20 @@ Fases: `inspect` (solo lectura) → `reproduce` → `implement` → `verify`.
 
 `RunReport` añade `proof` (comando, archivos, rojo con exit y salida, verde) y `contract` (archivos, modificados).
 
+### 4. Endurecimiento tras la revisión de Codex (`3990a9d`)
+
+- El comando de reproducción debe nombrar directamente los tests declarados. Todo archivo del workspace que nombre (runner, config) queda protegido **antes** de ejecutar el rojo.
+- Un rojo con firma de error de carga (sintaxis, módulo inexistente, comando inexistente, exit 127/9009, `error TS`) se rechaza. Es una heurística: no distingue todos los fallos ajenos al bug, por eso el recibo muestra la salida del rojo para que el revisor la juzgue.
+- Los globs de `contract.protect` se sellan al empezar el workflow, antes de la fase de reproducción. Las protecciones se acumulan conservando el hash original; un workflow admite como máximo una fase de reproducción.
+- El contrato se comprueba tras el rojo, antes y después de cada ejecución de checks y antes de completar. Un cambio transitorio que se restaura entre dos comprobaciones no es detectable.
+- Cualquier fase posterior a la verificación invalida el verde. *Fixed and proven* exige verde y `verificationStatus: passed`.
+- Las rutas protegidas se comparan sin distinguir mayúsculas en Windows y macOS.
+- Los checks detectados no repiten el comando de reproducción.
+- El recibo escapa todos los valores dinámicos (spans de código y bloques `~~~`), redacta credenciales reconocibles y revalida su destino justo antes de escribir.
+
 ## Consecuencias
 
 - Un `bugfix` sin un test automatizable ya no puede completarse; para esos casos queda `feature`.
 - El agente necesita declarar un comando que ejecute **solo** su test. Un comando que corre toda la suite también vale si falla por el bug, pero el recibo es menos preciso.
 - La detección por hash no impide la escritura por shell, solo garantiza que no pase desapercibida.
-- Verificado: `tests/proof.test.mjs` (12 casos) cubre camino feliz, reproducción que ya pasa, runner roto, shell denegada, declaración ausente, archivo inexistente, escritura denegada al test, manipulación por shell sin reparación, `contract.protect` en `feature` y validación de config.
+- Verificado: `tests/proof.test.mjs` (20 casos: 12 iniciales + 8 regresiones de la revisión) cubre camino feliz, reproducción que ya pasa, runner roto, shell denegada, declaración ausente, archivo inexistente, escritura denegada al test, manipulación por shell sin reparación, `contract.protect` en `feature` y validación de config.

@@ -209,7 +209,7 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
     if (!names.length) return unverified('No configured or standard verification commands found.');
     const declaredManager = packageJson.packageManager?.split('@')[0];
     const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(workspace.root);
-    names.forEach(name => planned.push({ name, command: `${packageManager} run ${name}` }));
+    names.map(name => ({ name, command: `${packageManager} run ${name}` })).filter(check => !prepend.includes(check.command)).forEach(check => planned.push(check));
   }
   const checks: VerificationResult[] = [];
   const timeout = options.timeoutMs ?? 120_000;

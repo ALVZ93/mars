@@ -46,7 +46,9 @@ export async function runTask(target: string, root: string, values: Record<strin
     try { await eventLog?.flush(); } catch (error) { failure ??= error; }
     if (receiptPath && runs.length) {
       try {
+        await (await Workspace.open(root)).resolve(values.receipt as string);
         await mkdir(path.dirname(receiptPath), { recursive: true });
+        await (await Workspace.open(root)).resolve(values.receipt as string);
         await writeFile(receiptPath, renderReceipt(runs), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
         process.stderr.write(`[receipt] ${safe(receiptPath)}\n`);
       } catch {

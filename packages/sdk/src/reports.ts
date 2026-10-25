@@ -66,7 +66,7 @@ export class RunReports {
       usage.inputTokens += event.inputTokens; usage.outputTokens += event.outputTokens; usage.samples++;
     }
   }
-  invalidateVerification(): void { if (this.#current) this.#current.verificationStatus = 'not-run'; }
+  invalidateVerification(): void { if (this.#current) { this.#current.verificationStatus = 'not-run'; delete this.#current.proof?.green; } }
   workflow(id: string): void { if (this.#current) this.#current.workflow = id; }
   verification(phase: string, attempt: number, value: VerificationReport): void {
     if (!this.#current) return;

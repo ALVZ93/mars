@@ -10,7 +10,7 @@ import { RunReports } from './reports.js';
 import type { RunReport } from './reports.js';
 import { captureVerifiedProcedure, memoryProposalTool } from './learning.js';
 import { TaskBudget, validateBudget } from './budget.js';
-import { TaskContract, reproductionTool } from './contract.js';
+import { TaskContract, commandFiles, reproductionTool, samePath, unrelatedFailure } from './contract.js';
 import type { ReproductionDeclaration } from './contract.js';
 import type { TaskBudgetLimits } from './budget.js';
 export type { RunReport } from './reports.js';
@@ -229,18 +229,28 @@ export async function createMars(options: MarsOptions) {
     reports.verification(phase, attempt, report);
     return report;
   };
-  /** Red step of the proof: the declared test must exist and fail (non-zero exit, no runner error) before any fix. */
-  const reproduce = async (declared: ReproductionDeclaration, signal: AbortSignal, phase: string) => {
+  /**
+   * Red step of the proof. The declared tests must exist and be named by the command; they and every other
+   * workspace file the command names (runner, config) are protected before it runs. The command must then
+   * fail for a behavioral reason: runner errors and load/syntax/missing-command signatures are rejected.
+   */
+  const reproduce = async (declared: ReproductionDeclaration, contract: TaskContract, signal: AbortSignal, phase: string) => {
     for (const file of declared.files) {
       let missing = false;
       try { missing = !(await lstat(await workspace.resolve(file))).isFile(); } catch { missing = true; }
       if (missing) throw new MarsError('ToolExecutionError', `Reproduction test file not found: ${file}`);
     }
+    const named = await commandFiles(workspace, declared.command);
+    const unnamed = declared.files.filter(file => !named.some(other => samePath(file, other)));
+    if (unnamed.length) throw new MarsError('ToolExecutionError', `The reproduction command must run the declared test files directly; not named: ${unnamed.join(', ')}.`);
+    await contract.add([...declared.files, ...named]);
+    activeContract = contract;
     const report = await runProjectChecks(workspace, signal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions, commands: [declared.command] });
     const check = report.checks[0];
     reports.proof({ phase, command: declared.command, files: declared.files, red: { exitCode: check?.exitCode ?? null, output: check?.output.slice(0, 4_000) ?? report.reason ?? '' } });
     if (!check || check.error || check.exitCode === null) throw new MarsError('ToolExecutionError', `Reproduction command could not run${check?.error ? ` (${check.error})` : ''}; the bug was not reproduced.`);
     if (check.passed) throw new MarsError('ToolExecutionError', 'Reproduction test passed before any fix; it does not reproduce the bug.');
+    if (unrelatedFailure(check.exitCode, check.output)) throw new MarsError('ToolExecutionError', 'Reproduction failed before reaching its assertions (load, syntax or missing command error); it does not reproduce the bug.');
   };
   const persist = () => {
     if (!options.sessionStore) return;
@@ -396,6 +406,7 @@ export async function createMars(options: MarsOptions) {
         let verified = false;
         let repairs = 0;
         const reproducing = workflow.phases.some(phase => phase.reproduction);
+        if (workflow.phases.filter(phase => phase.reproduction).length > 1) throw new MarsError('ConfigurationError', 'A workflow can declare at most one reproduction phase.');
         const contract = reproducing || options.protect?.length ? new TaskContract(workspace, options.protect) : undefined;
         let reproduction: ReproductionDeclaration | undefined;
         const enforceContract = async () => {
@@ -405,7 +416,8 @@ export async function createMars(options: MarsOptions) {
           if (modified.length) throw new MarsError('ToolExecutionError', `Task contract violated: protected files changed (${modified.join(', ')}).`);
         };
         try {
-          if (contract && !reproducing) { await contract.seal(); activeContract = contract; reports.contract({ files: contract.files, modified: [] }); }
+          // Configured globs are sealed before any phase can write, including the reproduction phase.
+          if (contract) { await contract.seal(); activeContract = contract; reports.contract({ files: contract.files, modified: [] }); }
           for (const phase of workflow.phases) {
             const selected = options.roleProviders?.[phase.role] ?? { provider: options.provider, model: options.model };
             let declared: ReproductionDeclaration | undefined;
@@ -415,10 +427,8 @@ export async function createMars(options: MarsOptions) {
             if (phase.reproduction) {
               if (!declared) throw new MarsError('ToolExecutionError', 'Reproduction phase ended without declare_reproduction; the bug was not reproduced.');
               reproduction = declared;
-              await reproduce(reproduction, workflowSignal, phase.id);
-              await contract!.seal(reproduction.files);
-              activeContract = contract;
-              reports.contract({ files: contract!.files, modified: [] });
+              await reproduce(reproduction, contract!, workflowSignal, phase.id);
+              await enforceContract();
               continue;
             }
             if (phase.verification) {
@@ -436,12 +446,14 @@ export async function createMars(options: MarsOptions) {
                 await enforceContract();
                 report = await runChecks(workflowSignal, phase.id, repairs, commands);
               }
+              await enforceContract();
               if (!report.verified) throw new MarsError('ToolExecutionError', `Workflow verification failed${report.reason ? `: ${report.reason}` : '.'}`);
               const green = reproduction ? report.checks.find(check => check.command === reproduction!.command) : undefined;
               if (green) reports.proofGreen(green.exitCode ?? 0);
               verified = true;
             }
           }
+          await enforceContract();
           status = 'completed'; persist(); await flushPersistence();
           await recordEvidence({ workflow: workflow.id, passed: true, ...(verified ? { verificationPassed: true } : {}) });
           return structuredClone(messages.at(-1)!);
