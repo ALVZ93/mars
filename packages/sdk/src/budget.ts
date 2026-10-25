@@ -36,6 +36,8 @@ export class TaskBudget {
   #requests = 0;
   #tokens = 0;
   #tokensKnown = true;
+  /** Attempts that have not (yet) reported usage: cancelled, failing or still streaming. */
+  #unmetered = 0;
   #exceeded?: BudgetReport['exceeded'];
   readonly signal: AbortSignal;
 
@@ -51,7 +53,7 @@ export class TaskBudget {
   get exceeded(): BudgetReport['exceeded'] { return this.#exceeded; }
 
   report(): BudgetReport {
-    return { limits: { ...this.#limits }, modelRequests: this.#requests, tokens: this.#tokens, tokensKnown: this.#tokensKnown, ...(this.#exceeded ? { exceeded: this.#exceeded } : {}) };
+    return { limits: { ...this.#limits }, modelRequests: this.#requests, tokens: this.#tokens, tokensKnown: this.#tokensKnown && this.#unmetered === 0, ...(this.#exceeded ? { exceeded: this.#exceeded } : {}) };
   }
 
   dispose(): void { clearTimeout(this.#timer); }
@@ -76,15 +78,15 @@ export class TaskBudget {
       async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
         budget.#before();
         budget.#requests++;
-        let reported = false;
-        try {
-          for await (const event of inner.stream(request, signal)) {
-            if (event.type === 'done' && event.usage) { budget.#tokens += event.usage.inputTokens + event.usage.outputTokens; reported = true; }
-            yield event;
+        // Counted as unmetered until usage arrives, so an abandoned or failing attempt never reads as known.
+        budget.#unmetered++;
+        for await (const event of inner.stream(request, signal)) {
+          if (event.type === 'done') {
+            budget.#unmetered--;
+            if (event.usage) budget.#tokens += event.usage.inputTokens + event.usage.outputTokens;
+            else budget.#tokensKnown = false;
           }
-        } finally {
-          // Failed, cancelled or unmetered attempts may still have consumed tokens.
-          if (!reported) budget.#tokensKnown = false;
+          yield event;
         }
       },
     };

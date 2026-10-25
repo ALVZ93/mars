@@ -256,6 +256,64 @@ test('budget: an operation that outlives its budget during persistence is not re
   assert.equal(mars.session.lastRun.status, 'failed');
 });
 
+// Regressions from the second Codex review (4e9b3a4).
+test('isolation: sessions isolated before metadata.isolation existed resume isolated', async t => {
+  const root = await repo(t);
+  const sessionStore = new FileSessionStore(path.join(root, '.mars', 'sessions'));
+  const first = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionStore });
+  await first.run('start');
+  await first.close();
+  const legacy = await sessionStore.get(first.id);
+  delete legacy.metadata.isolation;
+  await sessionStore.save(legacy);
+  const resumed = await createMars({ workspace: root, provider: new FakeProvider([write('legacy.txt', 'x\n'), answer()]), model: 'fake', includeProjectContext: false, sessionStore, sessionId: first.id });
+  t.after(() => resumed.close());
+  await resumed.run('continue');
+  assert.equal(resumed.isolation.id, first.id);
+  await assert.rejects(lstat(path.join(root, 'legacy.txt')), { code: 'ENOENT' });
+});
+
+test('isolation: runs stay listable and discardable after a submodule is added', async t => {
+  const root = await repo(t);
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, isolation: 'worktree', sessionId: 'run-sub' });
+  await mars.run('start');
+  await mars.close();
+  git(root, 'update-index', '--add', '--cacheinfo', `160000,${git(root, 'rev-parse', 'HEAD')},vendor/lib`);
+  git(root, 'commit', '-qm', 'submodule');
+  assert.equal((await listIsolatedRuns(root))[0].id, 'run-sub');
+  await discardIsolatedRun(root, 'run-sub');
+  assert.equal(await isolatedRunExists(root, 'run-sub'), false);
+});
+
+test('budget: the final receipt write is inside the budget', async t => {
+  const root = await fixture(t);
+  const inner = new FileSessionStore(path.join(root, '.mars', 'sessions'));
+  const slowReceipt = { list: inner.list.bind(inner), get: inner.get.bind(inner), save: async session => { if (session.lastRun) await new Promise(resolve => setTimeout(resolve, 120)); return inner.save(session); } };
+  const mars = await createMars({ workspace: root, provider: new FakeProvider([answer()]), model: 'fake', includeProjectContext: false, sessionStore: slowReceipt, budget: { maxDurationMs: 60 } });
+  t.after(() => mars.close());
+  await assert.rejects(mars.run('quick'), { code: 'BudgetExceededError' });
+  assert.equal(mars.lastRun.status, 'failed');
+  assert.equal(mars.lastRun.budget.exceeded, 'duration');
+  assert.equal((await inner.get(mars.id)).lastRun.status, 'failed');
+});
+
+test('budget: usage is unknown for responses without usage and for cancelled pending streams', async t => {
+  const root = await fixture(t);
+  const slowClose = { id: 'slow', async *stream() { yield { type: 'done', message: answer('ok') }; await new Promise(resolve => setTimeout(resolve, 500)); } };
+  const first = await createMars({ workspace: root, provider: slowClose, model: 'm', includeProjectContext: false, budget: { maxModelRequests: 5 } });
+  t.after(() => first.close());
+  await first.run('task');
+  assert.equal(first.lastRun.budget.tokensKnown, false);
+
+  const hanging = { id: 'hang', stream() { return { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}), return: async () => ({ done: true }) }) }; } };
+  const second = await createMars({ workspace: root, provider: hanging, model: 'm', includeProjectContext: false, budget: { maxModelRequests: 5 } });
+  t.after(() => second.close());
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 30);
+  await assert.rejects(second.run('task', controller.signal), { code: 'CancelledError' });
+  assert.equal(second.lastRun.budget.tokensKnown, false);
+});
+
 test('budget: a stream that fails after partial output leaves token usage unknown', async t => {
   const root = await fixture(t);
   const provider = { id: 'flaky', async *stream() { yield { type: 'text', text: 'partial' }; throw new Error('drop'); } };

@@ -44,8 +44,10 @@ Revisión de Codex sobre `52ae11e`; cada punto tiene test en `tests/isolation.te
 
 - `core.hooksPath` apunta a un directorio vacío y privado fuera de cualquier repositorio: nada que escriba el agente se convierte en hook (p. ej. `reference-transaction` al actualizar refs).
 - Los snapshots del worktree leen atributos del commit base (`GIT_ATTR_SOURCE`): un `.gitattributes` escrito por el agente no activa filtros `clean`. Los filtros configurados por el usuario (p. ej. LFS) siguen siendo de confianza, igual que en su uso normal de Git.
+- Se exige Git ≥ 2.40 (`GIT_ATTR_SOURCE`) para iniciar o reanudar un run aislado; listar, ver el diff y descartar no tienen requisitos, también tras añadir submódulos.
+- Sesiones aisladas anteriores a `metadata.isolation` se reconocen por sus refs.
 - `diff.noprefix`, `diff.mnemonicPrefix`, `diff.relative` y `apply.whitespace` se fijan por línea de comandos; el diff usa prefijos `a/`/`b/` explícitos y `apply -p1`.
-- El presupuesto se vuelve a comprobar tras persistir y capturar el resultado: una operación que termina fuera de presupuesto nunca deja un recibo de éxito. Un intento sin uso comunicado, incluido uno fallido, marca `tokensKnown: false`.
+- El presupuesto se vuelve a comprobar tras persistir y capturar el resultado: una operación que termina fuera de presupuesto nunca deja un recibo de éxito. El guardado final del recibo también cuenta: si el presupuesto vence durante esa escritura, el recibo se rebaja a fallido. Un intento sin uso comunicado (respuesta sin usage, error o stream cancelado pendiente) marca `tokensKnown: false`.
 
 ## Consecuencias
 

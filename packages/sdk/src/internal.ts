@@ -95,7 +95,9 @@ export async function createMars(options: MarsOptions) {
   }
   const sessionKey = options.sessionId ?? randomUUID();
   // An isolated session stays isolated: resuming never silently falls back to writing the user's tree.
-  const wasIsolated = (restored?.metadata.isolation as { mode?: string } | undefined)?.mode === 'worktree';
+  // Sessions from before metadata.isolation existed are recognised by their run refs.
+  const wasIsolated = (restored?.metadata.isolation as { mode?: string } | undefined)?.mode === 'worktree'
+    || (restored !== undefined && await isolatedRunExists(sourceWorkspace.root, sessionKey));
   if (wasIsolated && options.isolation === 'none') throw new MarsError('ConfigurationError', 'This session runs in an isolated worktree and cannot resume without isolation.');
   if (wasIsolated && !(await isolatedRunExists(sourceWorkspace.root, sessionKey))) throw new MarsError('ConfigurationError', 'The isolated run for this session was discarded; start a new session.');
   const useIsolation = options.isolation === 'worktree' || wasIsolated;
@@ -200,16 +202,26 @@ export async function createMars(options: MarsOptions) {
       status = code === 'CancelledError' ? 'cancelled' : 'failed';
       throw error;
     } finally {
-      budget.dispose();
       activeBudget = undefined;
       const report = reports.last;
-      if (report?.finishedAt) {
-        lastReceipt = { id: report.id, sessionId: id, kind: report.kind, status: report.status === 'active' ? 'failed' : report.status,
-          verificationStatus: report.verificationStatus, verificationCommands: report.verificationStatus === 'passed' ? [...(report.verifications.at(-1)?.report.plannedCommands ?? [])] : [],
-          messageCount: messages.length, taskStartMessageCount: Math.min(taskStartMessageCount, messages.length), finishedAt: report.finishedAt };
-        persist();
-        try { await flushPersistence(); } catch (error) { reports.fail(error instanceof MarsError ? error.code : 'ConfigurationError'); lastReceipt = undefined; status = 'failed'; throw error; }
-      }
+      try {
+        if (report?.finishedAt) {
+          lastReceipt = { id: report.id, sessionId: id, kind: report.kind, status: report.status === 'active' ? 'failed' : report.status,
+            verificationStatus: report.verificationStatus, verificationCommands: report.verificationStatus === 'passed' ? [...(report.verifications.at(-1)?.report.plannedCommands ?? [])] : [],
+            messageCount: messages.length, taskStartMessageCount: Math.min(taskStartMessageCount, messages.length), finishedAt: report.finishedAt };
+          persist();
+          try { await flushPersistence(); } catch (error) { reports.fail(error instanceof MarsError ? error.code : 'ConfigurationError'); lastReceipt = undefined; status = 'failed'; throw error; }
+          // The budget also covers writing the receipt: a success saved after it ran out is downgraded.
+          if (budget.exceeded && report.status === 'completed') {
+            reports.fail('BudgetExceededError', budget.report());
+            status = 'failed';
+            lastReceipt = { ...lastReceipt, status: 'failed', verificationStatus: lastReceipt.verificationStatus === 'passed' ? 'failed' : lastReceipt.verificationStatus, verificationCommands: [] };
+            persist();
+            await flushPersistence();
+            budget.assertWithin();
+          }
+        }
+      } finally { budget.dispose(); }
     }
   };
   const runChecks = async (signal: AbortSignal, phase: string, attempt = 0, commands = options.verificationCommands, prepend: readonly string[] = []) => {

@@ -88,5 +88,5 @@ export class RunReports {
     this.#last = this.#current;
     this.#current = undefined;
   }
-  fail(error?: ErrorCode): void { if (this.#last) { this.#last.status = 'failed'; if (error) this.#last.error = error; } }
+  fail(error?: ErrorCode, budget?: BudgetReport): void { if (this.#last) { this.#last.status = 'failed'; if (error) this.#last.error = error; if (budget) this.#last.budget = structuredClone(budget); } }
 }

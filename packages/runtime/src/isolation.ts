@@ -84,9 +84,16 @@ async function repository(source: string): Promise<{ top: string; common: string
   if (head.code !== 0) throw new MarsError('ConfigurationError', 'Isolated runs require at least one commit.');
   const top = (await git(source, ['rev-parse', '--show-toplevel'])).stdout.trim();
   const common = path.resolve(source, (await git(source, ['rev-parse', '--git-common-dir'])).stdout.trim());
+  return { top: path.resolve(top), common };
+}
+
+/** Preconditions to start or resume a run; listing, diffing and discarding stay available regardless. */
+async function assertIsolatable(top: string): Promise<void> {
+  // GIT_ATTR_SOURCE (2.40) keeps agent-written .gitattributes from activating clean filters.
+  const version = (await git(top, ['--version'])).stdout.match(/(\d+)\.(\d+)/);
+  if (!version || Number(version[1]) < 2 || (Number(version[1]) === 2 && Number(version[2]) < 40)) throw new MarsError('ConfigurationError', 'Isolated runs require Git 2.40 or later.');
   // Submodule contents are neither snapshotted nor checked out; refuse instead of running on a different tree.
   if (/^160000 /m.test((await git(top, ['ls-files', '--stage'])).stdout)) throw new MarsError('ConfigurationError', 'Isolated runs do not support repositories with submodules yet.');
-  return { top: path.resolve(top), common };
 }
 
 function marsDir(common: string): string { return path.join(common, 'mars'); }
@@ -140,6 +147,7 @@ async function unlinkDependencies(root: string): Promise<void> {
 export async function openIsolatedWorkspace(source: string, id: string, options: IsolationOptions = {}): Promise<IsolatedWorkspace> {
   validId(id);
   const { top, common } = await repository(source);
+  await assertIsolatable(top);
   const relative = path.relative(top, path.resolve(source));
   const worktree = worktreePath(common, id);
   let base = await resolveRef(top, ref(id, 'base'));
