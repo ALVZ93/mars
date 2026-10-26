@@ -67,7 +67,7 @@ Detalle y casos de prueba en el [ADR 008](decisions/008-bugfix-proof-contract-an
 
 | Paso | Qué exige MARS | Qué evita |
 | --- | --- | --- |
-| Reproducción | El agente escribe un test que cubre el comportamiento exigido por el informe (la regla o especificación, no solo el ejemplo) y llama a `declare_reproduction({ command, files, covers, cases })`. En esta fase solo puede escribir tests o archivos nuevos; shell y MCP están denegados | Romper código de producción para fabricar un fallo |
+| Reproducción | El agente escribe un test que cubre el comportamiento exigido por el informe (la regla o especificación, no solo el ejemplo) y llama a `declare_reproduction({ command, files, reported, covers, cases })`. `reported` es el ejemplo del propio informe tal como lo comprueba el test, y el recibo lo muestra. En esta fase solo puede escribir tests o archivos nuevos; shell y MCP están denegados | Romper código de producción para fabricar un fallo |
 | Comando | Debe nombrar los tests declarados y no usar código inline (`node -e`, `python -c`…). Todo archivo que nombre queda protegido | Comandos que mencionan el test sin ejecutarlo |
 | Rojo | El comando falla sin firmas de error de carga (sintaxis, módulo inexistente, comando inexistente) | Tests que fallan por una razón ajena al bug |
 | Control | Con los tests declarados vaciados, el resultado debe cambiar | Fallos que no dependen del test |
@@ -80,12 +80,23 @@ El recibo muestra `covers` y `cases` como alcance declarado por el agente: *Fixe
 
 Veredictos del recibo: *Fixed and proven*, *Test change proposed*, *Verified*, *Contract violated*, *Not proven*, *Failed*, *Completed without verification*.
 
+### Con un motor externo (`--engine claude|codex`)
+
+Una CLI de agente (Claude Code `claude -p` o `codex exec`) hace el trabajo de `bugfix` en dos turnos de una misma sesión. MARS comprueba entre turno y turno:
+
+1. **Turno 1 (motor):** escribe el test que reproduce el bug, sin arreglarlo, y termina con una declaración en JSON estructurado (`kind`, `command`, `files`, `reported`, `covers`, `cases` o `reason`), con los mismos límites que `declare_reproduction`/`declare_outdated_test`.
+2. **MARS:** compara el árbol antes y después del turno. Si cambió algún archivo existente que no sea test, rechaza la ejecución. Después aplica las mismas comprobaciones que antes (rojo, control, contrato) o, si el motor declaró un test desactualizado, comprueba el test.
+3. **Turno 2 (misma sesión):** arregla el código sin tocar los tests protegidos. Si los checks fallan, las reparaciones vuelven a esa sesión.
+4. **MARS:** contrato por hashes, checks, verde final y recibo.
+
+MARS ya no está entre el motor y sus escrituras, así que las reglas se comprueban **después** de cada turno (diff y hashes): no se impiden. La shell del motor corre en su propio sandbox. Claude Code se lanza solo con ajustes de proyecto (sin plugins, hooks ni MCP del usuario), con las ediciones aceptadas y la shell limitada a `npm` y `node`. Codex corre en su sandbox `workspace-write`, sin red ni aprobaciones. Los dos usan esfuerzo bajo por defecto. Para depurar, `MARS_ENGINE_TRACE=<archivo>` guarda la salida cruda de cada turno. El presupuesto de peticiones y tokens no limita al motor por dentro: solo cuentan el tiempo y los turnos que MARS lanza.
+
 ## Aislamiento
 
 `--isolate` ([ADR 007](decisions/007-isolated-runs-and-task-budget.md)):
 
 - La **base** es un commit del estado actual del árbol, incluidos cambios sin commitear y archivos no ignorados. Se crea con un índice temporal: el índice, el stash y las ramas del usuario no se tocan.
-- El **worktree** vive en `<git-common-dir>/mars/worktrees/<id>`, fuera del árbol de trabajo. `node_modules` se enlaza para que los checks funcionen.
+- El **worktree** vive en la carpeta de datos del usuario (`%LOCALAPPDATA%\mars\worktrees\<repo>\<id>` en Windows, `~/.local/share/mars/worktrees/…` en el resto; `MARS_WORKTREES_DIR` la cambia), fuera del árbol de trabajo y fuera de `.git`, donde Claude Code y Codex no dejan editar. Las ejecuciones creadas antes conservan su worktree en `<git-common-dir>/mars/worktrees/<id>`. `node_modules` se enlaza para que los checks funcionen.
 - Refs `refs/mars/runs/<id>/base` y `.../result`: el diff entre ambas es **solo** trabajo del agente.
 - `mars runs diff|apply|discard`. `apply` comprueba antes de aplicar y no toca el índice; si no aplica limpio, no cambia nada.
 - Las operaciones Git propias de MARS ignoran hooks (directorio privado vacío) y filtros definidos por el agente (atributos leídos del commit base). Requiere Git ≥ 2.40. No admite submódulos ni el sandbox Docker por ahora.

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { glob, lstat, readFile } from 'node:fs/promises';
+import { glob, lstat, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { MarsError } from '../../core/src/index.js';
@@ -115,29 +115,93 @@ export function outputShape(output: string): string {
   return output.replace(/\d+(?:[.,]\d+)?\s*(?:ms|s|sec|seconds)\b/gi, '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
 }
 
-/** `covers` and `cases` state what the reproduction asserts: the proof is only as wide as these cases. */
-export interface ReproductionDeclaration { command: string; files: string[]; covers: string; cases: string[] }
+/**
+ * `reported`, `covers` and `cases` state what the reproduction asserts: the proof is only as wide as these cases.
+ * `reported` ties the test to the report's own example, so a reviewer sees when a test proves a different bug.
+ */
+export interface ReproductionDeclaration { command: string; files: string[]; reported: string; covers: string; cases: string[] }
 
 export interface OutdatedTestDeclaration { command: string; files: string[]; reason: string }
+
+const OUTDATED_SCHEMA = z.strictObject({
+  command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the edited test file(s), from the workspace root.'),
+  files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Existing test files edited in this phase to the correct expectation.'),
+  reason: z.string().min(1).max(120).describe('Why the original expectation is outdated, in one sentence, citing the source of truth (report, docs, spec).'),
+});
+const REPRODUCTION_SCHEMA = z.strictObject({
+  command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the new failing test, from the workspace root. It must name the test file(s).'),
+  files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Workspace-relative test files written for the reproduction.'),
+  reported: z.string().min(1).max(200).describe("The report's own example as the test asserts it, in one line: the input from the report and the expected result instead of the wrong one it describes. If no test case can reproduce it, the diagnosis is wrong: keep inspecting."),
+  covers: z.string().min(1).max(120).describe('The required behavior the test asserts, in one sentence: the rule or spec from the report, not only the reported example.'),
+  cases: z.array(z.string().min(1).max(200)).min(1).max(24).describe('Each case the test asserts, one short line each (input and expected result).'),
+});
+const line = (value: string) => value.replace(/\s+/g, ' ').trim();
+const reproductionDeclaration = (value: ReproductionDeclaration): ReproductionDeclaration => ({ command: value.command.trim(), files: value.files.map(normalize), reported: line(value.reported), covers: line(value.covers), cases: value.cases.map(line) });
+const outdatedDeclaration = (value: OutdatedTestDeclaration): OutdatedTestDeclaration => ({ command: value.command.trim(), files: value.files.map(normalize), reason: line(value.reason) });
+
+/**
+ * Structured answer of an external engine's reproduction turn. One flat shape (unused fields empty) so that every
+ * vendor's structured-output mode accepts it.
+ */
+export const ENGINE_DECLARATION_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['kind', 'command', 'files', 'reported', 'covers', 'cases', 'reason'],
+  properties: {
+    kind: { type: 'string', enum: ['reproduction', 'outdated'] },
+    command: { type: 'string', description: 'Exact shell command that runs only the test file(s), from the workspace root.' },
+    files: { type: 'array', items: { type: 'string' }, description: 'Workspace-relative test files written or edited.' },
+    reported: { type: 'string', description: "reproduction: The report's own example as the test asserts it, in one line: the input from the report and the expected result instead of the wrong one it describes. If no test case can reproduce it, the diagnosis is wrong: keep inspecting. At most 200 characters. Otherwise empty." },
+    covers: { type: 'string', description: 'reproduction: the required behavior the test asserts, in one sentence of at most 120 characters. Otherwise empty.' },
+    cases: { type: 'array', items: { type: 'string' }, description: 'reproduction: each case the test asserts (at most 24), one line of at most 200 characters each. Otherwise empty.' },
+    reason: { type: 'string', description: 'outdated: why the original expectation is outdated, in one sentence of at most 120 characters. Otherwise empty.' },
+  },
+};
+
+/** Validates an engine declaration with the same limits as the declare_* tools. */
+export function engineDeclaration(output: unknown): { reproduction: ReproductionDeclaration } | { outdated: OutdatedTestDeclaration } {
+  const value = z.object({ kind: z.enum(['reproduction', 'outdated']) }).passthrough().safeParse(output);
+  if (!value.success) throw new MarsError('ToolExecutionError', 'The engine did not declare a reproduction or an outdated test.');
+  const { kind, ...rest } = value.data as { kind: string } & Record<string, unknown>;
+  // Descriptive text is trimmed rather than rejected: a long sentence does not make the declaration wrong.
+  const clip = (value: unknown, max: number) => typeof value === 'string' && value.length > max ? `${value.slice(0, max - 1)}…` : value;
+  rest.covers = clip(rest.covers, 120); rest.reason = clip(rest.reason, 120); rest.reported = clip(rest.reported, 200);
+  if (Array.isArray(rest.cases)) rest.cases = rest.cases.slice(0, 24).map(item => clip(item, 200));
+  const pick = (keys: string[]) => Object.fromEntries(keys.map(name => [name, rest[name]]));
+  const parsed = kind === 'reproduction' ? REPRODUCTION_SCHEMA.safeParse(pick(['command', 'files', 'reported', 'covers', 'cases'])) : OUTDATED_SCHEMA.safeParse(pick(['command', 'files', 'reason']));
+  if (!parsed.success) throw new MarsError('ToolExecutionError', `The engine's ${kind} declaration is invalid: ${parsed.error.issues.map(issue => `${issue.path.join('.')} ${issue.message}`).join('; ')}.`);
+  return kind === 'reproduction' ? { reproduction: reproductionDeclaration(parsed.data as ReproductionDeclaration) } : { outdated: outdatedDeclaration(parsed.data as OutdatedTestDeclaration) };
+}
+
+const SKIPPED_DIRS = new Set(['.git', '.mars', 'node_modules']);
+/** Hash of every workspace file outside dependencies and MARS data, plus the contents of test files. */
+export async function snapshotTree(root: string): Promise<Map<string, { hash: string; data?: Buffer }>> {
+  const files = new Map<string, { hash: string; data?: Buffer }>();
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) { if (!SKIPPED_DIRS.has(entry.name)) await walk(absolute); continue; }
+      if (!entry.isFile()) continue;
+      const data = await readFile(absolute);
+      const relative = normalize(path.relative(root, absolute));
+      files.set(relative, { hash: createHash('sha256').update(data).digest('hex'), ...(isTestPath(relative) ? { data } : {}) });
+    }
+  };
+  await walk(root);
+  return files;
+}
 
 /**
  * Tool offered with declare_reproduction: the agent claims that an existing test encodes an outdated expectation
  * and that the code is right. MARS checks it (original fails, edited passes) and reports it for human review.
  */
 export function outdatedTestTool(onDeclare: (value: OutdatedTestDeclaration) => void): Tool {
-  const schema = z.strictObject({
-    command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the edited test file(s), from the workspace root.'),
-    files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Existing test files edited in this phase to the correct expectation.'),
-    reason: z.string().min(1).max(120).describe('Why the original expectation is outdated, in one sentence, citing the source of truth (report, docs, spec).'),
-  });
+  const schema = OUTDATED_SCHEMA;
   return {
     name: 'declare_outdated_test',
     description: 'Use instead of declare_reproduction only when the code is right and an existing test is wrong: edit that test to the correct expectation first. MARS requires the original test to fail and the edited one to pass on the unchanged code, skips the fix, and reports a test change that needs human review.',
     parameters: z.toJSONSchema(schema),
     validate: input => schema.parse(input),
     async execute(input) {
-      const value = input as OutdatedTestDeclaration;
-      onDeclare({ command: value.command.trim(), files: value.files.map(normalize), reason: value.reason.replace(/\s+/g, ' ').trim() });
+      onDeclare(outdatedDeclaration(input as OutdatedTestDeclaration));
       return 'Outdated test declared. Do not call more tools: reply with one short sentence. MARS runs the original and the edited test next.';
     },
   };
@@ -145,21 +209,14 @@ export function outdatedTestTool(onDeclare: (value: OutdatedTestDeclaration) => 
 
 /** Tool offered only during a reproduction phase; the agent declares how to run its failing test. */
 export function reproductionTool(onDeclare: (value: ReproductionDeclaration) => void): Tool {
-  const schema = z.strictObject({
-    command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the new failing test, from the workspace root. It must name the test file(s).'),
-    files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Workspace-relative test files written for the reproduction.'),
-    covers: z.string().min(1).max(120).describe('The required behavior the test asserts, in one sentence: the rule or spec from the report, not only the reported example.'),
-    cases: z.array(z.string().min(1).max(200)).min(1).max(24).describe('Each case the test asserts, one short line each (input and expected result).'),
-  });
+  const schema = REPRODUCTION_SCHEMA;
   return {
     name: 'declare_reproduction',
     description: 'Declare the failing test that reproduces the bug and the cases it asserts; the receipt states that only these cases are proven. MARS runs it, requires it to fail on an assertion now and to pass after the fix, and protects the listed files and any file named in the command.',
     parameters: z.toJSONSchema(schema),
     validate: input => schema.parse(input),
     async execute(input) {
-      const value = input as ReproductionDeclaration;
-      const line = (value: string) => value.replace(/\s+/g, ' ').trim();
-      onDeclare({ command: value.command.trim(), files: value.files.map(normalize), covers: line(value.covers), cases: value.cases.map(line) });
+      onDeclare(reproductionDeclaration(input as ReproductionDeclaration));
       return 'Reproduction declared. Do not call more tools: reply with one short sentence describing the failing test. MARS runs it next and expects it to fail before the fix.';
     },
   };

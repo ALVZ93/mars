@@ -55,6 +55,8 @@ Options:
   --route       Enable deterministic role-based model routing
   --workflow    Run a workflow (bugfix, feature or review)
   --repair-attempts Repair failing workflow checks (0 to 3; default: 0)
+  --engine      Let an agent CLI do the bugfix work (claude or codex); MARS still proves it
+  --engine-model Model for --engine (default: sonnet for claude, gpt-5.6-sol for codex)
   --report      Export run/check reports as JSON to a new workspace file
   --receipt     Export a Markdown receipt (proof, contract, checks, changes) to a new workspace file
   --verify      Run standard project checks after the agent finishes

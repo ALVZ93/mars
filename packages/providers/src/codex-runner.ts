@@ -23,6 +23,8 @@ export interface CodexThreadOptions {
   networkAccessEnabled?: boolean;
   webSearchMode?: string;
   threadSource?: string;
+  /** Windows sandbox mode (`windows.sandbox`), needed when shell commands run inside Codex's own sandbox. */
+  windowsSandbox?: string;
 }
 export interface CodexTurnResult { finalResponse: string; usage: { input_tokens: number; output_tokens: number } | null }
 
@@ -50,7 +52,7 @@ export function findCodexBinary(): { executable: string; pathDirs: string[] } {
 const wait = (promise: Promise<unknown>, ms: number) => Promise.race([promise.then(() => true), new Promise<boolean>(resolve => setTimeout(resolve, ms, false).unref())]);
 
 /** Ends the Codex process and every child it started (sandbox helpers, shells), and waits until it is gone. */
-async function terminate(child: ChildProcess, closed: Promise<unknown>): Promise<void> {
+export async function terminate(child: ChildProcess, closed: Promise<unknown>): Promise<void> {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
     const taskkill = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
@@ -98,6 +100,7 @@ export class CodexCliRunner {
           if (options.networkAccessEnabled !== undefined) args.push('--config', `sandbox_workspace_write.network_access=${options.networkAccessEnabled}`);
           if (options.webSearchMode) args.push('--config', `web_search="${options.webSearchMode}"`);
           if (options.approvalPolicy) args.push('--config', `approval_policy="${options.approvalPolicy}"`);
+          if (options.windowsSandbox) args.push('--config', `windows.sandbox="${options.windowsSandbox}"`);
           if (threadId) args.push('resume', threadId);
           const { executable, pathDirs } = this.#binary();
           const env: NodeJS.ProcessEnv = { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ?? 'codex_sdk_ts' };

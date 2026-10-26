@@ -63,6 +63,7 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
       lines.push('### Proof', '');
       lines.push(`Reproduction: ${c(proof.command)} (${proof.files.map(c).join(', ')})`, '');
       // Declared by the agent, like the command: it bounds the claim, it does not widen it.
+      if (proof.scope?.reported) lines.push(`Reported case declared by the agent: ${c(proof.scope.reported)}`, '');
       if (proof.scope) lines.push(`Scope declared by the agent: ${text(clean(proof.scope.covers))}`, '', ...proof.scope.cases.map(item => `- ${c(item)}`), '', '_Only these cases are proven; behavior outside them is covered by the checks below, if at all._', '');
       lines.push(`- Before the fix: ${proof.red.exitCode === null ? 'did not run' : `failed with exit ${proof.red.exitCode}`} — expected`);
       if (proof.control) lines.push(`- With the test emptied: exit ${proof.control.exitCode ?? '?'} — the failure comes from the test`);

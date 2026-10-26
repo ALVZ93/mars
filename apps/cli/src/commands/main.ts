@@ -14,7 +14,7 @@ export async function main(): Promise<void> {
     parsed = parseArgs({ allowPositionals: true, options: {
       model: { type: 'string' }, workspace: { type: 'string' }, script: { type: 'string' },
       'allow-shell': { type: 'boolean' }, 'api-key': { type: 'boolean' }, browser: { type: 'boolean' }, device: { type: 'boolean' },
-      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
+      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, engine: { type: 'string' }, 'engine-model': { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     } });
   } catch { throw new MarsError('ConfigurationError', 'Invalid command arguments. Use --help.'); }
@@ -29,6 +29,9 @@ export async function main(): Promise<void> {
   if (values.receipt !== undefined && command !== 'run' && !shorthand) throw new MarsError('ConfigurationError', '--receipt requires a non-interactive task.');
   if (values.isolate === true && command !== 'run' && !shorthand) throw new MarsError('ConfigurationError', '--isolate requires a non-interactive task.');
   if (values['repair-attempts'] !== undefined && typeof values.workflow !== 'string') throw new MarsError('ConfigurationError', '--repair-attempts requires --workflow.');
+  if (values.engine !== undefined && !['claude', 'codex'].includes(String(values.engine))) throw new MarsError('ConfigurationError', '--engine must be claude or codex.');
+  if (values.engine !== undefined && typeof values.workflow !== 'string') throw new MarsError('ConfigurationError', '--engine requires --workflow bugfix.');
+  if (values['engine-model'] !== undefined && values.engine === undefined) throw new MarsError('ConfigurationError', '--engine-model requires --engine.');
   if (command === 'run' && !positionals.slice(1).join(' ').trim()) throw new MarsError('ConfigurationError', 'Provide a task to run.');
   if (command === 'doctor') { await doctorCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.sandbox); return; }
   if (command === 'auth') { await authCommand(positionals, createCredentialStore()); return; }

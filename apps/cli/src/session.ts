@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { AnthropicProvider, FakeProvider, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
+import { AnthropicProvider, FakeProvider, claudeEngine, codexEngine, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
 import type { CredentialStore, ModelProvider, RouteDecision } from '../../../packages/sdk/src/internal.js';
 import { ConversationScreen } from './conversation.js';
 import { authContext, authProvider, authenticatedProviders } from './commands/auth.js';
@@ -99,6 +99,7 @@ export async function createSessionMars(target: string, root: string, values: Re
     requestTimeoutMs: loaded.config.limits.requestTimeoutMs,
     maxContextChars: loaded.config.limits.maxContextChars,
     protect: loaded.config.contract.protect,
+    ...(typeof values.engine === 'string' ? { engine: (values.engine === 'claude' ? claudeEngine : codexEngine)(typeof values['engine-model'] === 'string' ? { model: values['engine-model'] } : {}) } : {}),
     // Resumed isolated sessions are detected by the SDK from their persisted metadata.
     ...(values.isolate === true ? { isolation: 'worktree' as const } : {}),
     budget: {

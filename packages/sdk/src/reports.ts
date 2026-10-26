@@ -31,7 +31,7 @@ export interface RunReport {
   /** Red→green proof of a reproduction phase: the declared test failed before the fix and passed after it. */
   /** An existing test shown to be outdated: it failed as written and passes as edited, with the code unchanged. Needs human review. */
   testUpdate?: { phase: string; command: string; files: string[]; reason: string; original: { exitCode: number | null; output: string }; updated: { exitCode: number } };
-  proof?: { phase: string; command: string; files: string[]; scope?: { covers: string; cases: string[] }; red: { exitCode: number | null; output: string }; control?: { exitCode: number | null }; green?: { exitCode: number } };
+  proof?: { phase: string; command: string; files: string[]; scope?: { reported?: string; covers: string; cases: string[] }; red: { exitCode: number | null; output: string }; control?: { exitCode: number | null }; green?: { exitCode: number } };
   /** Files the implementation could not change; `modified` lists violations detected by hash. */
   contract?: { files: string[]; modified: string[] };
   /** Isolated runs only: the agent's diff is exactly base..result. */

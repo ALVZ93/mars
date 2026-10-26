@@ -11,7 +11,7 @@ let ids = 0;
 const answer = (content = 'done') => ({ role: 'assistant', content, toolCalls: [] });
 const call = (name, args) => ({ role: 'assistant', content: '', toolCalls: [{ id: `${name}-${++ids}`, name, arguments: args }] });
 const write = (file, content) => call('write_file', { path: file, content });
-const SCOPE = { covers: 'add() returns the arithmetic sum', cases: ['add(2, 3) is 5'] };
+const SCOPE = { reported: 'add(2, 3) is 5, not -1', covers: 'add() returns the arithmetic sum', cases: ['add(2, 3) is 5'] };
 const declare = (command, files, scope = SCOPE) => call('declare_reproduction', { command, files, ...scope });
 
 const BUGGY = 'export const add = (a, b) => a - b;\n';
@@ -47,6 +47,7 @@ test('bugfix proves the fix: reproduction fails before, passes after, test untou
   assert.match(receipt, /Before the fix: failed with exit 1/);
   assert.match(receipt, /After the fix: passed \(exit 0\)/);
   assert.match(receipt, /1 protected file\(s\) unchanged/);
+  assert.match(receipt, /Reported case declared by the agent: `add\(2, 3\) is 5, not -1`/);
   assert.match(receipt, /Scope declared by the agent: add\(\) returns the arithmetic sum/);
   assert.match(receipt, /- `add\(2, 3\) is 5`/);
   assert.match(receipt, /only these cases are proven/i);
