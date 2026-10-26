@@ -1,4 +1,5 @@
 // Runs the eval corpus in several conditions and records one JSONL row per run.
+//   mars-claude, mars-codex: MARS bugfix with --engine claude|codex doing the work
 //   claude:   Claude Code `claude -p`, edits accepted, shell limited to npm/node, no user settings or MCP
 //   agy:      Antigravity `agy -p` in its sandbox with edits accepted
 //   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
@@ -42,10 +43,10 @@ async function prepare(task) {
   return work;
 }
 
-function runMars(task, work) {
+function runMars(task, work, extra = []) {
   const started = Date.now();
   const r = spawnSync(process.execPath, [cli, 'run', task.report, '--workflow', 'bugfix', '--isolate', '--model', values.model, '--allow-shell',
-    '--timeout', '300000', '--max-retries', '2', '--budget-requests', '60', '--budget-time', String(timeoutMs), '--receipt', 'receipt.md', '--report', 'report.json', '--no-animation'],
+    '--timeout', '300000', '--max-retries', '2', '--budget-requests', '60', '--budget-time', String(timeoutMs), '--receipt', 'receipt.md', '--report', 'report.json', '--no-animation', ...extra],
     { cwd: work, encoding: 'utf8', windowsHide: true, timeout: timeoutMs + 120_000, input: '' });
   return { seconds: (Date.now() - started) / 1000, exit: r.status, log: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
@@ -112,6 +113,8 @@ const engines = { baseline: runBaseline, claude: runClaude, agy: runAgy };
 async function evaluate(task, work) {
   const changed = [...new Set([...git(work, 'diff', '--name-only', 'HEAD').split('\n'), ...git(work, 'ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean))];
   await cp(path.join(here, 'tasks', task.id, 'hidden'), path.join(work, '.eval-hidden'), { recursive: true });
+  // Intent-to-add makes new files show up in the diff without staging their content.
+  spawnSync('git', ['add', '-N', '.'], { cwd: work, windowsHide: true });
   const diff = spawnSync('git', ['diff', 'HEAD'], { cwd: work, encoding: 'utf8', windowsHide: true }).stdout;
   const hidden = sh(task.hidden, work);
   await rm(path.join(work, '.eval-hidden'), { recursive: true, force: true });
@@ -133,7 +136,8 @@ for (const id of ids) {
     process.stderr.write(`▶ ${id} · ${condition}\n`);
     let row;
     try {
-      const marsRun = condition === 'mars' ? runMars(task, work) : undefined;
+      const isMars = condition.startsWith('mars');
+      const marsRun = isMars ? runMars(task, work, condition === 'mars' ? [] : ['--engine', condition.slice('mars-'.length)]) : undefined;
       if (!marsRun && !engines[condition]) throw new Error(`Unknown condition: ${condition}`);
       const result = marsRun ? await finishMars(work, marsRun) : engines[condition](task, work);
       // Keep the evidence of every run next to the results for later diagnosis.
@@ -147,16 +151,16 @@ for (const id of ids) {
       await writeFile(path.join(artifacts, 'changes.diff'), diff);
       await writeFile(path.join(artifacts, 'hidden.log'), hiddenOutput);
       // A "claim" for the baseline is changing source code; for MARS it is the Fixed and proven verdict.
-      const claimed = condition === 'mars' ? result.claimed : outcome.sourceChanged.length > 0;
+      const claimed = isMars ? result.claimed : outcome.sourceChanged.length > 0;
       row = { task: id, kind: task.kind, condition, model: values.model, ...summary, ...outcome, claimed,
-        falseProof: condition === 'mars' ? result.claimed && !outcome.correct : null,
-        falseProofKind: condition === 'mars' && result.claimed && !outcome.correct ? (!outcome.checksPass ? 'checks' : outcome.hiddenFailed.some(name => task.reportedTests?.includes(name)) ? 'reported' : 'scope') : null,
+        falseProof: isMars ? result.claimed && !outcome.correct : null,
+        falseProofKind: isMars && result.claimed && !outcome.correct ? (!outcome.checksPass ? 'checks' : outcome.hiddenFailed.some(name => task.reportedTests?.includes(name)) ? 'reported' : 'scope') : null,
         trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
     } catch (error) {
       row = { task: id, kind: task.kind, condition, model: values.model, status: 'harness-error', error: String(error?.message ?? error), at: new Date().toISOString() };
     } finally { await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
     await appendFile(out, `${JSON.stringify(row)}\n`);
-    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : `FAIL${row.falseProofKind ? ` (${row.falseProofKind})` : ''}`} · ${condition === 'mars' ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
+    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : `FAIL${row.falseProofKind ? ` (${row.falseProofKind})` : ''}`} · ${condition.startsWith('mars') ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
   }
 }
 process.stdout.write(`${out}\n`);

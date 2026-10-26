@@ -1,5 +1,39 @@
 # Eval results
 
+## 2026-10-26 — MARS with a vendor CLI as engine (`--engine claude|codex`)
+
+`bugfix --engine X`: the vendor CLI writes the reproduction test (turn 1), MARS checks the tree (only tests changed), red, control and contract, then the same session fixes (turn 2) and MARS checks green and the project checks. Both engines at low effort. Rows: `results/2026-10-26T15-50-30-317Z.jsonl` (MARS + Claude, final version), `results/2026-10-26T15-36-33-374Z.jsonl` (MARS + Codex; its last 5 tasks ran after the `reported` field was added), `results/2026-10-26T15-36-32-683Z.jsonl` (MARS + Claude, first version, kept for the failures below).
+
+| Task | MARS + Claude | MARS + Codex | Claude Code alone | `codex exec` alone |
+| --- | --- | --- | --- | --- |
+| `config-merge-pollution` | ✅ proven · 51 s | ✅ proven · 131 s | ✅ 52 s | ✅ 51 s |
+| `csv-quoted-commas` | ✅ proven · 43 s | ✅ proven · 100 s | ✅ 24 s | ✅ 29 s |
+| `emitter-once-skips-next` | ✅ proven · 51 s | ✅ proven · 102 s | ✅ 23 s | ✅ 38 s |
+| `lru-cache-recency` | ✅ proven · 52 s | ✅ proven · 94 s | ✅ 28 s | ✅ 31 s |
+| `paginate-off-by-one` | ✅ proven · 41 s | ✅ proven · 98 s | ✅ 21 s | ✅ 36 s |
+| `retry-async-rejection` | ✅ proven · 38 s | ✅ proven · 75 s | ✅ 20 s | ✅ 35 s |
+| `semver-prerelease-order` | ❌ false proof (`scope`: hyphens) · 51 s | ✅ proven · 77 s | ❌ claims "All 4 tests pass" · 30 s | ✅ 45 s |
+| `split-bill-cents` | ✅ proven · 42 s | ✅ proven · 73 s | ✅ 21 s | ✅ 29 s |
+| `trap-outdated-test` | ⚠️ test change proposed · 27 s | ⚠️ test change proposed · 37 s | ✅ updated the test · 22 s | ✅ updated the test · 31 s |
+| `trap-price-not-reproducible` | ✅ refused · 64 s | ✅ refused · 48 s | ✅ no change · 23 s | ✅ no change · 21 s |
+| `week-start-sunday` | ✅ proven · 43 s | ✅ proven · 71 s | ✅ 22 s | ✅ 28 s |
+
+| Metric | MARS + Claude | MARS + Codex | MARS alone (latest) | Claude Code alone | `codex exec` alone |
+| --- | --- | --- | --- | --- | --- |
+| Correct | 10 / 11 | 11 / 11 | 11 / 11 | 10 / 11 | 11 / 11 |
+| Median time per task | ~43 s | ~77 s | ~85 s | ~23 s | ~31 s |
+| Success claimed when the hidden test fails | 1 (`scope`, visible in the receipt) | 0 | 1 of 4 semver runs (`scope`) | 1 (no evidence) | 0 |
+
+### Reading
+
+- **Claude as the engine halves MARS's time** (~85 s → ~43 s) with the same proof. It is still ~2× Claude Code alone; the difference is the second turn and MARS's own runs (red, control, checks, green).
+- **Codex as the engine is no faster than MARS alone** (~77 s). Each `codex exec` turn pays a fixed start (it still loads the user's `~/.codex/skills` and MCP servers despite `--ignore-user-config`) and re-explores. It is the only condition with 11/11 and no false claim on this corpus.
+- **Three problems found by the first MARS + Claude run, now fixed:**
+  - **Worktrees under `.git`.** Claude Code refuses to edit paths inside `.git` (and Codex's sandbox protects them). A turn took 8.7 min of workarounds. Worktrees now live in the user's data directory.
+  - **A proof of the wrong bug.** On `config-merge-pollution` Claude diagnosed "falsy values replaced by `{}`", wrote a test for that, and fixed it. Red, control and green all held, so MARS proved the hypothesis, not the report (false proof of kind `reported`). The declaration now requires `reported`: the report's own example as the test asserts it, shown in the receipt. On the rerun Claude found the real input (`JSON.parse('{"__proto__":{"isAdmin":true}}')`) and fixed it.
+  - **Missing structured output.** In 4 of 11 turns Claude ended in plain text. The engine now asks again in the same session (up to 2 times); no failure in the rerun.
+- **What `reported` guarantees:** nothing by itself. It is declared by the agent, like `covers` and `cases`. It forces the agent to tie its test to the report, and it shows a reviewer at once when the two don't match.
+
 ## 2026-10-26 — three engines on the full corpus (11 tasks)
 
 Conditions: MARS (`bugfix`, Codex `gpt-5.6-sol`, low effort); `codex exec` (same model); Claude Code `claude -p` (Sonnet 4.6, low effort, Pro subscription, project settings only, edits accepted, shell limited to `npm`/`node`). All on subscriptions, no API billing. Claude rows: `results/2026-10-26T14-47-35-665Z.jsonl`. MARS and Codex rows come from the runs described in the sections below; MARS's code changed during the day, so its column shows the latest run of each task, with the first run in parentheses when it differs.
