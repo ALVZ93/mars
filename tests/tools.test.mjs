@@ -6,6 +6,9 @@ import path from 'node:path';
 import { Workspace, Permissions } from '../dist/packages/runtime/src/index.js';
 import { ToolRegistry, workspaceTools, shellEnvironment, OUTPUT_LIMIT, sandboxStatus, createSandboxShell } from '../dist/packages/tools/src/index.js';
 
+// Keep isolated worktrees out of the user's data directory.
+process.env.MARS_WORKTREES_DIR ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'mars-worktrees-'));
+
 async function setup(t, permissions = new Permissions('deny')) {
   const temp = await mkdtemp(path.join(tmpdir(), 'mars-test-'));
   assert.equal(path.dirname(temp), tmpdir());

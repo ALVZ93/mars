@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Keep isolated worktrees out of the user's data directory.
+process.env.MARS_WORKTREES_DIR ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'mars-worktrees-'));
+
 const cli = fileURLToPath(new URL('../dist/apps/cli/src/index.js', import.meta.url));
 function run(args, env = {}) { return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 20000, env: { ...process.env, OPENAI_API_KEY: '', MARS_MODEL: '', MARS_CREDENTIAL_STORE: 'file', ...env } }); }
 test('CLI help, version and configuration failures', async t => {

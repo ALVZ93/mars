@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, rm, rmdir, symlink, unlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { MarsError } from '../../core/src/index.js';
 
@@ -97,7 +97,24 @@ async function assertIsolatable(top: string): Promise<void> {
 }
 
 function marsDir(common: string): string { return path.join(common, 'mars'); }
-function worktreePath(common: string, id: string): string { return path.join(marsDir(common), 'worktrees', id); }
+/**
+ * Worktrees live in the user's data directory, one folder per repository, not under `.git`: agent CLIs used as
+ * engines (Claude Code, Codex) treat paths inside `.git` as protected and refuse to edit them.
+ * MARS_WORKTREES_DIR overrides the location.
+ */
+function worktreesRoot(): string {
+  if (process.env.MARS_WORKTREES_DIR) return path.resolve(process.env.MARS_WORKTREES_DIR);
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
+  const data = process.platform === 'win32' ? process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local') : process.env.XDG_DATA_HOME ?? path.join(home, '.local', 'share');
+  return path.join(data, 'mars', 'worktrees');
+}
+/** Where run `id` is checked out; runs created before the move keep their worktree under `.git/mars/worktrees`. */
+async function worktreePath(common: string, id: string): Promise<string> {
+  const legacy = path.join(marsDir(common), 'worktrees', id);
+  if (await exists(legacy)) return legacy;
+  const repo = createHash('sha256').update(path.resolve(common).toLowerCase()).digest('hex').slice(0, 16);
+  return path.join(worktreesRoot(), repo, id);
+}
 function ref(id: string, kind: 'base' | 'result'): string { return `refs/mars/runs/${id}/${kind}`; }
 
 async function resolveRef(cwd: string, name: string): Promise<string | undefined> {
@@ -149,7 +166,7 @@ export async function openIsolatedWorkspace(source: string, id: string, options:
   const { top, common } = await repository(source);
   await assertIsolatable(top);
   const relative = path.relative(top, path.resolve(source));
-  const worktree = worktreePath(common, id);
+  const worktree = await worktreePath(common, id);
   let base = await resolveRef(top, ref(id, 'base'));
   if (!base) {
     const head = (await git(top, ['rev-parse', 'HEAD'])).stdout.trim();
@@ -169,7 +186,7 @@ export async function openIsolatedWorkspace(source: string, id: string, options:
 /** Records the worktree state as `refs/mars/runs/<id>/result`; the diff base..result is only the agent's work. */
 export async function captureIsolatedResult(isolated: IsolatedWorkspace): Promise<IsolatedResult> {
   const { common } = await repository(isolated.source);
-  const worktree = worktreePath(common, isolated.id);
+  const worktree = await worktreePath(common, isolated.id);
   const parent = (await resolveRef(worktree, ref(isolated.id, 'result'))) ?? isolated.base;
   const result = await snapshot(worktree, common, parent, `mars: result ${isolated.id}`, isolated.base);
   await git(worktree, ['update-ref', ref(isolated.id, 'result'), result]);
@@ -196,7 +213,7 @@ export async function listIsolatedRuns(source: string): Promise<IsolatedRun[]> {
     const match = /^refs\/mars\/runs\/(.+)\/(base|result)$/.exec(name ?? '');
     if (!match || !sha) continue;
     const id = match[1]!;
-    const run = runs.get(id) ?? { id, base: '', root: worktreePath(common, id), exists: false };
+    const run = runs.get(id) ?? { id, base: '', root: await worktreePath(common, id), exists: false };
     if (match[2] === 'base') { run.base = sha; run.createdAt = date; } else run.result = sha;
     runs.set(id, run);
   }
@@ -231,7 +248,7 @@ export async function applyIsolatedRun(source: string, id: string): Promise<stri
 
 export async function discardIsolatedRun(source: string, id: string): Promise<void> {
   const run = await requireRun(source, id);
-  const worktree = worktreePath(run.common, id);
+  const worktree = await worktreePath(run.common, id);
   if (await exists(worktree)) {
     await unlinkDependencies(path.join(worktree, path.relative(run.top, path.resolve(source))));
     await unlinkDependencies(worktree);

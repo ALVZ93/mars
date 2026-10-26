@@ -7,6 +7,9 @@ import { spawnSync } from 'node:child_process';
 import { createMars } from '../dist/packages/sdk/src/index.js';
 import { FakeProvider, FileSessionStore, applyIsolatedRun, discardIsolatedRun, isolatedDiff, isolatedRunExists, listIsolatedRuns, mergeConfig, loadConfig, saveConfig, projectConfigPath } from '../dist/packages/sdk/src/internal.js';
 
+// Keep isolated worktrees out of the user's data directory.
+process.env.MARS_WORKTREES_DIR ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'mars-worktrees-'));
+
 const answer = (content = 'done') => ({ role: 'assistant', content, toolCalls: [] });
 const write = (file, content, id = `write-${file}-${content.length}`) => ({ role: 'assistant', content: '', toolCalls: [{ id, name: 'write_file', arguments: { path: file, content } }] });
 const git = (cwd, ...args) => {
