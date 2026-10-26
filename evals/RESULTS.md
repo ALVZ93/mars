@@ -1,5 +1,31 @@
 # Eval results
 
+## 2026-10-26 — hard corpus (6 new tasks)
+
+Same model and settings as below. Raw rows: `results/2026-10-26T09-29-50-679Z.jsonl` (full run), `results/2026-10-26T09-51-33-746Z.jsonl` and `results/2026-10-26T10-00-45-334Z.jsonl` (MARS reruns), `results/2026-10-26T09-59-47-106Z.jsonl` (baseline rerun). From these runs on, each run's artifacts also include `changes.diff` and `hidden.log`.
+
+| Task | MARS | Hidden test | Baseline (`codex exec`) | Hidden test |
+| --- | --- | --- | --- | --- |
+| `config-merge-pollution` | Fixed and proven · 99 s | ✅ | fixed · 51 s | ✅ |
+| `emitter-once-skips-next` | Fixed and proven · 81 s | ✅ | failed in 3 s, no output (harness/CLI) → rerun fixed · 38 s | ✅ |
+| `lru-cache-recency` | Timeout ×2 (stalled request) → 3rd run Fixed and proven · 128 s | ✅ | fixed · 31 s | ✅ |
+| `semver-prerelease-order` | **Fixed and proven ×2, hidden test fails** · 81–87 s | ❌ | fixed · 45 s | ✅ |
+| `split-bill-cents` | Fixed and proven · 82 s | ✅ | fixed · 29 s | ✅ |
+| `trap-outdated-test` | Timeout → rerun refused: reproduction passed before any fix · 64 s | ✅ unchanged, suite still red | updated the outdated test · 31 s | ✅ |
+
+| Metric | MARS | Baseline |
+| --- | --- | --- |
+| Correct, first run | 3 / 6 | 5 / 6 (6 / 6 discarding the 3 s infra failure) |
+| False proofs | **1 / 4 (reproduced 2 / 2)** | n/a |
+| Phase timeouts | 2 / 6 | 0 |
+
+## Reading
+
+- **MARS loses on this corpus.** The baseline fixed every task, faster. Without the timeouts MARS would be 4/6, and one of those four is a false proof.
+- **The false proof shows what the proof covers.** The reproduction tested only the reported example (`alpha.10` vs `alpha.2`). The report asked for SemVer 2.0.0 precedence, and the unchanged parser still breaks prerelease identifiers that contain hyphens. So *Fixed and proven* means "the reported symptom is fixed", not "the stated contract holds". The receipt must say exactly that, or the reproduction must cover the stated contract.
+- **Bugfix cannot express "the test is the bug".** On `trap-outdated-test` the agent diagnosed correctly that the test expects 18 % VAT. The flow then requires a reproduction that fails before a change in source code, so it can only refuse, and the suite stays red. It needs an explicit outcome such as "outdated test, proposed test change" with human approval.
+- **Stalled Codex requests are frequent:** 4 of 16 MARS runs across both corpora, always on the first request of a phase. They are now aborted and retried when retries remain (`limits.requestTimeoutMs`, 120 s by default), but no real run has hit that path yet.
+
 ## 2026-10-25 — first corpus (5 tasks)
 
 Model `openai-codex:gpt-5.6-sol` (ChatGPT subscription, reasoning effort low), Windows 11, Node 24. Raw rows: `results/2026-10-25T16-42-02-029Z.jsonl` (full run) and `results/2026-10-25T16-55-36-070Z.jsonl` (rerun of `retry-async-rejection`, MARS only).

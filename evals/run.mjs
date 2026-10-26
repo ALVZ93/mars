@@ -70,18 +70,20 @@ function runBaseline(task, work) {
       if (event.type === 'item.completed' && event.item?.type === 'agent_message') final = event.item.text ?? '';
     } catch { /* not JSON */ }
   }
-  return { status: completed ? 'completed' : r.error?.code === 'ETIMEDOUT' ? 'timeout' : 'failed', requests: turns, tokens: completed ? tokens : null, tokensKnown: completed, seconds: (Date.now() - started) / 1000, final: final.slice(0, 500) };
+  return { status: completed ? 'completed' : r.error?.code === 'ETIMEDOUT' ? 'timeout' : 'failed', requests: turns, tokens: completed ? tokens : null, tokensKnown: completed, seconds: (Date.now() - started) / 1000, final: final.slice(0, 500), log: `${r.stdout ?? ''}${r.stderr ?? ''}${r.error ? `
+${r.error.message}` : ''}` };
 }
 
 async function evaluate(task, work) {
   const changed = [...new Set([...git(work, 'diff', '--name-only', 'HEAD').split('\n'), ...git(work, 'ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean))];
   await cp(path.join(here, 'tasks', task.id, 'hidden'), path.join(work, '.eval-hidden'), { recursive: true });
+  const diff = spawnSync('git', ['diff', 'HEAD'], { cwd: work, encoding: 'utf8', windowsHide: true }).stdout;
   const hidden = sh(task.hidden, work);
   await rm(path.join(work, '.eval-hidden'), { recursive: true, force: true });
   // A fix is correct only if the hidden tests and the project's own checks both pass on the final tree.
   const checksPass = task.checks.every(command => sh(command, work).ok);
   const sourceChanged = changed.filter(file => !/(^|\/)(tests?|__tests__)\/|\.test\.[^/]+$/.test(file));
-  return { hiddenPass: hidden.ok, checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
+  return { diff, hiddenOutput: hidden.output, hiddenPass: hidden.ok, checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
 }
 
 const tasksDir = path.join(here, 'tasks');
@@ -103,11 +105,14 @@ for (const id of ids) {
       await mkdir(artifacts, { recursive: true });
       for (const file of ['report.json', 'receipt.md']) await cp(path.join(work, file), path.join(artifacts, file)).catch(() => {});
       await cp(path.join(work, '.mars', 'events.jsonl'), path.join(artifacts, 'events.jsonl')).catch(() => {});
-      await writeFile(path.join(artifacts, 'output.log'), marsRun ? marsRun.log : result.final ?? '');
-      const outcome = await evaluate(task, work);
+      const { log, ...summary } = result;
+      await writeFile(path.join(artifacts, 'output.log'), marsRun ? marsRun.log : log);
+      const { diff, hiddenOutput, ...outcome } = await evaluate(task, work);
+      await writeFile(path.join(artifacts, 'changes.diff'), diff);
+      await writeFile(path.join(artifacts, 'hidden.log'), hiddenOutput);
       // A "claim" for the baseline is changing source code; for MARS it is the Fixed and proven verdict.
       const claimed = condition === 'mars' ? result.claimed : outcome.sourceChanged.length > 0;
-      row = { task: id, kind: task.kind, condition, model: values.model, ...result, ...outcome, claimed,
+      row = { task: id, kind: task.kind, condition, model: values.model, ...summary, ...outcome, claimed,
         falseProof: condition === 'mars' ? result.claimed && !outcome.correct : null,
         trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
     } catch (error) {
