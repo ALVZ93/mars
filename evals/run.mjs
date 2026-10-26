@@ -2,6 +2,8 @@
 //   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
 //   baseline: the same bundled Codex binary, `codex exec` in workspace-write mode, same model and time limit
 // Then the hidden acceptance tests run on the resulting tree. Consumes real model quota.
+// A false proof is split by the hidden tests it fails: `reported` (the reported example itself, so the proof was wrong)
+// or `scope` (other cases of the contract, outside what the reproduction covered); `checks` when the project checks fail.
 // Usage: node evals/run.mjs [--model openai-codex:gpt-5.6-sol] [--conditions mars,baseline] [task-id ...]
 import { spawnSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile, appendFile } from 'node:fs/promises';
@@ -24,6 +26,8 @@ const shell = command => process.platform === 'win32'
 const sh = (command, cwd) => { const [file, args] = shell(command); const r = spawnSync(file, args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 120_000 }); return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` }; };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).stdout.trim();
 const matches = (file, globs) => globs.some(glob => path.matchesGlob(file, glob));
+// Failing test names from node:test output, without the per-file summary lines.
+const failedTests = output => [...new Set([...output.matchAll(/^\s*✖ (.+?) \(\d[\d.]*m?s\)\s*$/gm)].map(match => match[1]).filter(name => !/\.eval-hidden|\.m?js$/.test(name)))];
 
 async function prepare(task) {
   const work = await mkdtemp(path.join(tmpdir(), `mars-bench-${task.id}-`));
@@ -50,7 +54,7 @@ async function finishMars(work, run) {
   if (report?.isolation?.files.length) spawnSync(process.execPath, [cli, 'runs', 'apply', report.isolation.id], { cwd: work, encoding: 'utf8', windowsHide: true });
   const verdict = report ? receiptVerdict(report) : { ok: false, label: 'No report' };
   const tokens = report?.usage.reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0) ?? null;
-  return { status: report?.status ?? 'missing', error: report?.error, verdict: verdict.label, claimed: verdict.label === 'Fixed and proven', requests: report?.modelRequests ?? null, tokens, tokensKnown: report?.budget?.tokensKnown ?? false, repairs: report?.repairAttempts ?? 0, seconds: run.seconds };
+  return { status: report?.status ?? 'missing', error: report?.error, verdict: verdict.label, claimed: verdict.label === 'Fixed and proven', needsReview: verdict.label === 'Test change proposed', proofScope: report?.proof?.scope, requests: report?.modelRequests ?? null, tokens, tokensKnown: report?.budget?.tokensKnown ?? false, repairs: report?.repairAttempts ?? 0, seconds: run.seconds };
 }
 
 function runBaseline(task, work) {
@@ -83,7 +87,7 @@ async function evaluate(task, work) {
   // A fix is correct only if the hidden tests and the project's own checks both pass on the final tree.
   const checksPass = task.checks.every(command => sh(command, work).ok);
   const sourceChanged = changed.filter(file => !/(^|\/)(tests?|__tests__)\/|\.test\.[^/]+$/.test(file));
-  return { diff, hiddenOutput: hidden.output, hiddenPass: hidden.ok, checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
+  return { diff, hiddenOutput: hidden.output, hiddenPass: hidden.ok, hiddenFailed: hidden.ok ? [] : failedTests(hidden.output), checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
 }
 
 const tasksDir = path.join(here, 'tasks');
@@ -114,12 +118,13 @@ for (const id of ids) {
       const claimed = condition === 'mars' ? result.claimed : outcome.sourceChanged.length > 0;
       row = { task: id, kind: task.kind, condition, model: values.model, ...summary, ...outcome, claimed,
         falseProof: condition === 'mars' ? result.claimed && !outcome.correct : null,
+        falseProofKind: condition === 'mars' && result.claimed && !outcome.correct ? (!outcome.checksPass ? 'checks' : outcome.hiddenFailed.some(name => task.reportedTests?.includes(name)) ? 'reported' : 'scope') : null,
         trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
     } catch (error) {
       row = { task: id, kind: task.kind, condition, model: values.model, status: 'harness-error', error: String(error?.message ?? error), at: new Date().toISOString() };
     } finally { await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
     await appendFile(out, `${JSON.stringify(row)}\n`);
-    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : 'FAIL'} · ${condition === 'mars' ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
+    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : `FAIL${row.falseProofKind ? ` (${row.falseProofKind})` : ''}`} · ${condition === 'mars' ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
   }
 }
 process.stdout.write(`${out}\n`);

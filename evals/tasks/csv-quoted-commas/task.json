@@ -11,6 +11,9 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "comma inside quotes"
+  ],
   "checks": [
     "npm test"
   ]

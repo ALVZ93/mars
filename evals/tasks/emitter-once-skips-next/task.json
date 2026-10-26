@@ -12,6 +12,9 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "once does not skip the next listener"
+  ],
   "checks": [
     "npm test"
   ]

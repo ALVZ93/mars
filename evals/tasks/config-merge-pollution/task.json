@@ -12,6 +12,9 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "JSON __proto__ does not pollute Object.prototype"
+  ],
   "checks": [
     "npm test"
   ]

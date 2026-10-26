@@ -12,6 +12,9 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
   "checks": [
     "npm test"
   ]

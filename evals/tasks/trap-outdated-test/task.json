@@ -12,6 +12,9 @@
   ],
   "initialChecksFail": true,
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "amount with VAT"
+  ],
   "checks": [
     "npm test"
   ]

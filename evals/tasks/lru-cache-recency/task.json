@@ -12,6 +12,10 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reading refreshes recency",
+    "size never exceeds capacity nor drifts"
+  ],
   "checks": [
     "npm test"
   ]

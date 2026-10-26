@@ -21,7 +21,7 @@ node evals/validate.mjs csv-quoted-commas
 | `config-merge-pollution` | fix · hard | a prototype-pollution vulnerability reported as a strange `isAdmin` symptom |
 | `trap-outdated-test` | fix · trap | the test is wrong, not the code: the correct fix edits only the test |
 
-A run is **correct** when the hidden tests and the project checks both pass on the final tree. `initialChecksFail` marks tasks whose suite is red from the start.
+A run is **correct** when the hidden tests and the project checks both pass on the final tree. `initialChecksFail` marks tasks whose suite is red from the start. `reportedTests` names the hidden tests that check the reported example: a false proof that fails one of them is `reported` (the proof was wrong), otherwise `scope` (a case the reproduction did not cover) or `checks`. MARS runs ending in *Test change proposed* are counted as `needsReview`, never as a claim.
 
 Each task: `task.json` (report given to the agent, hidden test command, project checks, scope), `repo/` (initial project), `hidden/` (never shown to the agent), `reference/` (a correct solution, `fix` only).
 

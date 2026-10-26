@@ -11,6 +11,9 @@
     "test/**"
   ],
   "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "sunday belongs to the previous monday"
+  ],
   "checks": [
     "npm test"
   ]

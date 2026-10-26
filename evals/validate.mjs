@@ -27,6 +27,12 @@ async function validate(id) {
   const hasReference = existsSync(path.join(tasksDir, id, 'reference'));
   if (task.kind === 'fix' && !hasReference) problems.push('fix tasks need reference/');
   if (task.kind === 'trap' && hasReference) problems.push('trap tasks must not have reference/');
+  // reportedTests name the hidden tests that check the reported example; a false proof outside them is a scope gap.
+  if (task.kind === 'fix') {
+    const hiddenSource = (await Promise.all((await readdir(path.join(tasksDir, id, 'hidden'))).map(file => readFile(path.join(tasksDir, id, 'hidden', file), 'utf8')))).join('\n');
+    if (!task.reportedTests?.length) problems.push('fix tasks need reportedTests');
+    for (const name of task.reportedTests ?? []) if (!hiddenSource.includes(JSON.stringify(name))) problems.push(`reportedTests names a missing hidden test: ${name}`);
+  }
 
   const work = await mkdtemp(path.join(tmpdir(), `mars-eval-${id}-`));
   try {
