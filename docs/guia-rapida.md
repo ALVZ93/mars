@@ -19,7 +19,7 @@ mars run "La página 1 muestra los elementos de la página 2" --workflow bugfix 
 MARS hace esto, en orden:
 
 1. **Mira el código** sin tocar nada.
-2. **Escribe un test que demuestra el bug.** MARS lo ejecuta y exige que falle. Si no falla, el bug no está demostrado y MARS se para: no «arregla» algo que no ha visto roto.
+2. **Escribe un test que demuestra el bug** y declara qué casos cubre. MARS lo ejecuta y exige que falle. Si no falla, el bug no está demostrado y MARS se para: no «arregla» algo que no ha visto roto.
 3. **Comprueba que el fallo viene de ese test.** Lo vacía un momento, repite y verifica que el resultado cambia.
 4. **Arregla el código.** El test queda bloqueado: el modelo no puede «hacer trampa» cambiándolo para que pase.
 5. **Ejecuta tus tests** y vuelve a pasar el test del bug sobre el resultado final.
@@ -34,7 +34,7 @@ MARS hace esto, en orden:
 2 file(s) in isolated run: src/paginate.js, test/paginate.test.js
 ```
 
-El recibo, extractado, sale en inglés para poder pegarlo en un PR de cualquier equipo. Dice: falló antes del arreglo, el fallo viene del test, pasa después, el test protegido no cambió, y estos son los archivos cambiados.
+El recibo, extractado, sale en inglés para poder pegarlo en un PR de cualquier equipo. Dice: qué casos cubre la prueba (solo esos quedan demostrados), falló antes del arreglo, el fallo viene del test, pasa después, el test protegido no cambió, y estos son los archivos cambiados.
 
 Si algo sale mal (no se pudo reproducir, se acabó el tiempo, alguien tocó el test), el recibo lo dice. MARS no adorna resultados.
 

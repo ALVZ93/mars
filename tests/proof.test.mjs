@@ -11,7 +11,8 @@ let ids = 0;
 const answer = (content = 'done') => ({ role: 'assistant', content, toolCalls: [] });
 const call = (name, args) => ({ role: 'assistant', content: '', toolCalls: [{ id: `${name}-${++ids}`, name, arguments: args }] });
 const write = (file, content) => call('write_file', { path: file, content });
-const declare = (command, files) => call('declare_reproduction', { command, files });
+const SCOPE = { covers: 'add() returns the arithmetic sum', cases: ['add(2, 3) is 5'] };
+const declare = (command, files, scope = SCOPE) => call('declare_reproduction', { command, files, ...scope });
 
 const BUGGY = 'export const add = (a, b) => a - b;\n';
 const FIXED = 'export const add = (a, b) => a + b;\n';
@@ -38,6 +39,7 @@ test('bugfix proves the fix: reproduction fails before, passes after, test untou
   assert.notEqual(report.proof.red.exitCode, 0);
   assert.match(report.proof.red.output, /expected 5, got -1/);
   assert.deepEqual(report.proof.green, { exitCode: 0 });
+  assert.deepEqual(report.proof.scope, SCOPE);
   assert.deepEqual(report.contract, { files: ['tests/calc.test.mjs'], modified: [] });
   assert.deepEqual(report.verifications.at(-1).report.plannedCommands, ['node tests/calc.test.mjs', 'node --version']);
   const receipt = renderReceipt([report]);
@@ -45,6 +47,9 @@ test('bugfix proves the fix: reproduction fails before, passes after, test untou
   assert.match(receipt, /Before the fix: failed with exit 1/);
   assert.match(receipt, /After the fix: passed \(exit 0\)/);
   assert.match(receipt, /1 protected file\(s\) unchanged/);
+  assert.match(receipt, /Scope declared by the agent: add\(\) returns the arithmetic sum/);
+  assert.match(receipt, /- `add\(2, 3\) is 5`/);
+  assert.match(receipt, /only these cases are proven/i);
   assert.doesNotMatch(receipt, /reproduced|inspected/, 'receipts never include model output');
 });
 
@@ -112,6 +117,12 @@ test('contract.protect guards existing files in any workflow; new files stay wri
   assert.deepEqual(instance.lastRun.contract, { files: ['fixtures/golden.txt'], modified: [] });
   assert.equal(instance.lastRun.proof, undefined);
   assert.match(renderReceipt([instance.lastRun]), /✅ MARS — Verified/);
+});
+
+test('declare_reproduction requires the covered contract and its cases', async t => {
+  const root = await project(t);
+  const instance = await mars(t, root, [answer('inspected'), write('tests/calc.test.mjs', TEST), declare('node tests/calc.test.mjs', ['tests/calc.test.mjs'], {}), answer('reproduced')]);
+  await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /without declare_reproduction/);
 });
 
 test('declare_reproduction exists only during a reproduction phase', async t => {

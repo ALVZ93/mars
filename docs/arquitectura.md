@@ -67,12 +67,14 @@ Detalle y casos de prueba en el [ADR 008](decisions/008-bugfix-proof-contract-an
 
 | Paso | Qué exige MARS | Qué evita |
 | --- | --- | --- |
-| Reproducción | El agente escribe un test y llama a `declare_reproduction({ command, files })`. En esta fase solo puede escribir tests o archivos nuevos; shell y MCP están denegados | Romper código de producción para fabricar un fallo |
+| Reproducción | El agente escribe un test que cubre el comportamiento exigido por el informe (la regla o especificación, no solo el ejemplo) y llama a `declare_reproduction({ command, files, covers, cases })`. En esta fase solo puede escribir tests o archivos nuevos; shell y MCP están denegados | Romper código de producción para fabricar un fallo |
 | Comando | Debe nombrar los tests declarados y no usar código inline (`node -e`, `python -c`…). Todo archivo que nombre queda protegido | Comandos que mencionan el test sin ejecutarlo |
 | Rojo | El comando falla sin firmas de error de carga (sintaxis, módulo inexistente, comando inexistente) | Tests que fallan por una razón ajena al bug |
 | Control | Con los tests declarados vaciados, el resultado debe cambiar | Fallos que no dependen del test |
 | Contrato | Los tests de reproducción y los globs de `contract.protect` no se pueden escribir. Sus hashes se comprueban tras el rojo, después de cada comando de verificación y al final | Debilitar el test para que pase |
 | Verde final | Tras todas las fases y checks, la reproducción se repite sobre el árbol entregado y debe pasar | Un verde obsoleto |
+
+El recibo muestra `covers` y `cases` como alcance declarado por el agente: *Fixed and proven* garantiza esos casos, no el resto del contrato. Lo que quede fuera solo lo cubren los checks del proyecto.
 
 Veredictos del recibo: *Fixed and proven*, *Verified*, *Contract violated*, *Not proven*, *Failed*, *Completed without verification*.
 

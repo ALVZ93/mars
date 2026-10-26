@@ -115,22 +115,26 @@ export function outputShape(output: string): string {
   return output.replace(/\d+(?:[.,]\d+)?\s*(?:ms|s|sec|seconds)\b/gi, '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
 }
 
-export interface ReproductionDeclaration { command: string; files: string[] }
+/** `covers` and `cases` state what the reproduction asserts: the proof is only as wide as these cases. */
+export interface ReproductionDeclaration { command: string; files: string[]; covers: string; cases: string[] }
 
 /** Tool offered only during a reproduction phase; the agent declares how to run its failing test. */
 export function reproductionTool(onDeclare: (value: ReproductionDeclaration) => void): Tool {
   const schema = z.strictObject({
     command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the new failing test, from the workspace root. It must name the test file(s).'),
     files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Workspace-relative test files written for the reproduction.'),
+    covers: z.string().min(1).max(120).describe('The required behavior the test asserts, in one sentence: the rule or spec from the report, not only the reported example.'),
+    cases: z.array(z.string().min(1).max(200)).min(1).max(24).describe('Each case the test asserts, one short line each (input and expected result).'),
   });
   return {
     name: 'declare_reproduction',
-    description: 'Declare the failing test that reproduces the bug. MARS runs it, requires it to fail on an assertion now and to pass after the fix, and protects the listed files and any file named in the command.',
+    description: 'Declare the failing test that reproduces the bug and the cases it asserts; the receipt states that only these cases are proven. MARS runs it, requires it to fail on an assertion now and to pass after the fix, and protects the listed files and any file named in the command.',
     parameters: z.toJSONSchema(schema),
     validate: input => schema.parse(input),
     async execute(input) {
       const value = input as ReproductionDeclaration;
-      onDeclare({ command: value.command.trim(), files: value.files.map(normalize) });
+      const line = (value: string) => value.replace(/\s+/g, ' ').trim();
+      onDeclare({ command: value.command.trim(), files: value.files.map(normalize), covers: line(value.covers), cases: value.cases.map(line) });
       return 'Reproduction declared. Do not call more tools: reply with one short sentence describing the failing test. MARS runs it next and expects it to fail before the fix.';
     },
   };

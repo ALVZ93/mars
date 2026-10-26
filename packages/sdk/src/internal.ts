@@ -250,7 +250,7 @@ export async function createMars(options: MarsOptions) {
     activeContract = contract;
     const report = await runProjectChecks(workspace, signal, { timeoutMs: options.timeoutMs ?? 120_000, shellExecutor, permissions, commands: [declared.command] });
     const check = report.checks[0];
-    reports.proof({ phase, command: declared.command, files: declared.files, red: { exitCode: check?.exitCode ?? null, output: check?.output.slice(0, 4_000) ?? report.reason ?? '' } });
+    reports.proof({ phase, command: declared.command, files: declared.files, scope: { covers: declared.covers, cases: declared.cases }, red: { exitCode: check?.exitCode ?? null, output: check?.output.slice(0, 4_000) ?? report.reason ?? '' } });
     if (!check || check.error || check.exitCode === null) throw new MarsError('ToolExecutionError', `Reproduction command could not run${check?.error ? ` (${check.error})` : ''}; the bug was not reproduced.`);
     if (check.passed) throw new MarsError('ToolExecutionError', 'Reproduction test passed before any fix; it does not reproduce the bug.');
     if (unrelatedFailure(check.exitCode, check.output)) throw new MarsError('ToolExecutionError', 'Reproduction failed before reaching its assertions (load, syntax or missing command error); it does not reproduce the bug.');
