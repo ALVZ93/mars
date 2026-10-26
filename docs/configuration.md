@@ -46,7 +46,8 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
     "timeoutMs": 120000,
     "maxContextChars": 200000,
     "maxRetries": 0,
-    "retryDelayMs": 500
+    "retryDelayMs": 500,
+    "requestTimeoutMs": 120000
   },
   "verification": {
     "commands": ["pnpm typecheck", "pnpm test"],
@@ -66,7 +67,7 @@ Las credenciales usan el almacén del sistema por defecto. `MARS_CREDENTIAL_STOR
 }
 ```
 
-`allow`, `ask` y `deny` son los únicos valores válidos para permisos. `verification.commands` sustituye la detección automática de scripts y permite verificar proyectos sin `package.json`; cada comando atraviesa los mismos permisos y sandbox que la shell del agente. Los servidores MCP se inician por stdio y su `cwd` se resuelve desde el workspace.
+`allow`, `ask` y `deny` son los únicos valores válidos para permisos. `verification.commands` sustituye la detección automática de scripts y permite verificar proyectos sin `package.json`; cada comando atraviesa los mismos permisos y sandbox que la shell del agente. Con `maxRetries` > 0, una petición al modelo que no emite nada durante `requestTimeoutMs` se aborta y se reintenta; sin reintentos manda `timeoutMs`. Los servidores MCP se inician por stdio y su `cwd` se resuelve desde el workspace.
 
 ## Comandos de configuración
 

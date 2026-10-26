@@ -28,6 +28,7 @@ export interface MarsConfig {
     maxContextChars: number;
     maxRetries: number;
     retryDelayMs: number;
+    requestTimeoutMs: number;
   };
   verification: { commands: string[]; maxRepairAttempts: number };
   /** Optional limits shared by every phase of one operation; absent means unlimited. */
@@ -71,7 +72,7 @@ export const DEFAULT_CONFIG: MarsConfig = {
   model: {},
   routing: { enabled: false },
   permissions: { shell: 'ask', destructiveShell: 'deny', network: 'ask', gitCommit: 'ask', gitPush: 'ask' },
-  limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500 },
+  limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500, requestTimeoutMs: 120_000 },
   verification: { commands: [], maxRepairAttempts: 0 },
   budget: {},
   contract: { protect: [] },
@@ -166,7 +167,7 @@ function parseConfig(value: unknown): ConfigPatch {
       if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 100) throw new MarsError('ConfigurationError', 'Config limits.maxRetries must be an integer from 0 to 100.');
       result.limits.maxRetries = parsed;
     }
-    for (const key of ['maxTurns', 'maxToolCalls', 'timeoutMs', 'maxContextChars', 'retryDelayMs'] as const) if (value[key] !== undefined) result.limits[key] = positive(value[key], DEFAULT_CONFIG.limits[key]);
+    for (const key of ['maxTurns', 'maxToolCalls', 'timeoutMs', 'maxContextChars', 'retryDelayMs', 'requestTimeoutMs'] as const) if (value[key] !== undefined) result.limits[key] = positive(value[key], DEFAULT_CONFIG.limits[key]);
   }
   if (verification !== undefined) {
     if (!verification || typeof verification !== 'object' || Array.isArray(verification)) throw new MarsError('ConfigurationError', 'Config verification must be an object.');

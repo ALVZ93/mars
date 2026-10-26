@@ -103,7 +103,7 @@ export async function configCommand(positionals: string[], root: string): Promis
   if (action === 'path') { process.stdout.write(`${loaded.paths.project}\n`); return; }
   if (action === 'set' && positionals.length >= 4) {
     const key = positionals[2]!;
-    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'verification.commands', 'verification.maxRepairAttempts', 'budget.maxDurationMs', 'budget.maxModelRequests', 'budget.maxTokens', 'mcp.servers', 'knowledge.enabled']);
+    const allowed = new Set(['model.default', 'routing.enabled', 'routing.planner', 'routing.implementer', 'routing.reviewer', 'routing.verifier', 'permissions.shell', 'permissions.destructiveShell', 'permissions.network', 'permissions.gitCommit', 'permissions.gitPush', 'limits.maxTurns', 'limits.maxToolCalls', 'limits.timeoutMs', 'limits.maxContextChars', 'limits.maxRetries', 'limits.retryDelayMs', 'limits.requestTimeoutMs', 'verification.commands', 'verification.maxRepairAttempts', 'budget.maxDurationMs', 'budget.maxModelRequests', 'budget.maxTokens', 'mcp.servers', 'knowledge.enabled']);
     if (!allowed.has(key)) throw new MarsError('ConfigurationError', `Unknown config key: ${key}`);
     const raw = positionals.slice(3).join(' ');
     let value: unknown = raw;

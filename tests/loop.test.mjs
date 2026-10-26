@@ -69,6 +69,33 @@ test('provider error propagates and input history is not mutated', async () => {
   await assert.rejects(run([], { messages, provider: { id: 'broken', async *stream() { throw new MarsError('AuthenticationError', 'Missing credential'); } } }), { code: 'AuthenticationError' });
   assert.equal(messages.length, 1);
 });
+test('a stalled request is aborted and retried only while retries remain', async () => {
+  let attempts = 0;
+  const aborted = [];
+  const events = [];
+  const provider = {
+    id: 'stalling',
+    async *stream(_request, signal) {
+      attempts++;
+      if (attempts === 1) {
+        await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+        aborted.push(signal.aborted);
+        return;
+      }
+      yield { type: 'done', message: final };
+    },
+  };
+  const result = await run([], { provider, maxRetries: 1, retryDelayMs: 1, requestTimeoutMs: 20, emit: event => events.push(event) });
+  assert.deepEqual(result.at(-1), final);
+  assert.equal(attempts, 2);
+  assert.deepEqual(aborted, [true]);
+  assert.deepEqual(events.filter(event => event.type === 'model:retry').map(event => event.error), ['ProviderUnavailableError']);
+  // Without retries left the stall limit does not apply: the session timeout decides.
+  attempts = 0;
+  await assert.rejects(run([], { provider, requestTimeoutMs: 20, timeoutMs: 200 }), { code: 'TimeoutError' });
+  assert.equal(attempts, 1);
+});
+
 test('transient provider retries are opt-in and bounded before any tool executes', async () => {
   let attempts = 0;
   const events = [];

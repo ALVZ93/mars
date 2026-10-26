@@ -62,6 +62,8 @@ export interface MarsOptions {
   maxContextChars?: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  /** Stall limit per model request while retries remain; see runAgent. */
+  requestTimeoutMs?: number;
   permissionPolicies?: PermissionPolicies;
   sessionStore?: SessionStore;
   /** Reviewed project memory and skill proposals; explicit opt-in for embedders. */
@@ -339,7 +341,7 @@ export async function createMars(options: MarsOptions) {
           return tools.execute(call, signal);
         },
       };
-      messages = await runAgent({ ...options, provider: activeBudget?.provider(provider) ?? provider, model, messages, tools: phaseTools, signal, maxContextChars: options.maxContextChars, maxRetries: options.maxRetries, retryDelayMs: options.retryDelayMs, emit: emitEvent, onCheckpoint: history => { taskStartMessageCount = Math.max(0, taskStartMessageCount - Math.max(0, messages.length - history.length)); messages = history; persist(); } });
+      messages = await runAgent({ ...options, provider: activeBudget?.provider(provider) ?? provider, model, messages, tools: phaseTools, signal, maxContextChars: options.maxContextChars, maxRetries: options.maxRetries, retryDelayMs: options.retryDelayMs, requestTimeoutMs: options.requestTimeoutMs, emit: emitEvent, onCheckpoint: history => { taskStartMessageCount = Math.max(0, taskStartMessageCount - Math.max(0, messages.length - history.length)); messages = history; persist(); } });
       status = phase ? 'active' : 'completed';
       persist();
       await flushPersistence();

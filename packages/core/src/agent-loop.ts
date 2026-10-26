@@ -19,6 +19,8 @@ export interface RunOptions {
   maxContextChars?: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  /** While retries remain, a request with no stream activity for this long is aborted and retried. Default 120 s. */
+  requestTimeoutMs?: number;
   onCheckpoint?: (messages: AgentMessage[]) => void;
 }
 
@@ -43,7 +45,8 @@ export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
   const contextLimit = options.maxContextChars ?? 200_000;
   const maxRetries = options.maxRetries ?? 0;
   const retryDelayMs = options.retryDelayMs ?? 500;
-  for (const value of [maxTurns, maxCalls, timeout, contextLimit, retryDelayMs]) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
+  for (const value of [maxTurns, maxCalls, timeout, contextLimit, retryDelayMs, requestTimeoutMs]) {
     if (!Number.isSafeInteger(value) || value < 1) throw new MarsError('ConfigurationError', 'Limits must be positive integers.');
   }
   if (!Number.isSafeInteger(maxRetries) || maxRetries < 0) throw new MarsError('ConfigurationError', 'maxRetries must be a non-negative integer.');
@@ -69,11 +72,21 @@ export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
       let attempt = 0;
       while (!response) {
         emit({ type: 'model:request', turn, provider: provider.id, model, messageCount: messages.length, toolCount: tools.schemas().length });
-        const iterator = provider.stream({ model, messages: structuredClone(messages), tools: tools.schemas() }, signal)[Symbol.asyncIterator]();
+        // A stalled stream is only worth cutting short when it can be retried; otherwise the session timeout decides.
+        const stall = new AbortController();
+        let stallTimer: NodeJS.Timeout | undefined;
+        const watchStall = () => {
+          if (attempt >= maxRetries) return;
+          clearTimeout(stallTimer);
+          stallTimer = setTimeout(() => stall.abort(new MarsError('ProviderUnavailableError', `Model request stalled for ${requestTimeoutMs} ms.`)), requestTimeoutMs);
+        };
+        const requestSignal = AbortSignal.any([signal, stall.signal]);
+        const iterator = provider.stream({ model, messages: structuredClone(messages), tools: tools.schemas() }, requestSignal)[Symbol.asyncIterator]();
         let streamedChars = 0;
         try {
           while (true) {
-            const item = await abortable(iterator.next(), signal);
+            watchStall();
+            const item = await abortable(iterator.next(), requestSignal).catch(error => { throw stall.signal.aborted && !signal.aborted ? stall.signal.reason : error; });
             if (item.done) break;
             if (item.value.type === 'text') {
               streamedChars += item.value.text.length;
@@ -105,6 +118,7 @@ export async function runAgent(options: RunOptions): Promise<AgentMessage[]> {
           emit({ type: 'model:error', turn, provider: provider.id, error: error instanceof MarsError ? error.code : 'ProviderUnavailableError' });
           throw error;
         } finally {
+          clearTimeout(stallTimer);
           void Promise.resolve(iterator.return?.()).catch(() => {});
         }
       }

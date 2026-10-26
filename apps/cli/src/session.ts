@@ -96,6 +96,7 @@ export async function createSessionMars(target: string, root: string, values: Re
     timeoutMs: positive(typeof values.timeout === 'string' ? values.timeout : undefined, loaded.config.limits.timeoutMs),
     maxRetries: nonNegative(typeof values['max-retries'] === 'string' ? values['max-retries'] : undefined, loaded.config.limits.maxRetries),
     retryDelayMs: positive(typeof values['retry-delay'] === 'string' ? values['retry-delay'] : undefined, loaded.config.limits.retryDelayMs),
+    requestTimeoutMs: loaded.config.limits.requestTimeoutMs,
     maxContextChars: loaded.config.limits.maxContextChars,
     protect: loaded.config.contract.protect,
     // Resumed isolated sessions are detected by the SDK from their persisted metadata.
