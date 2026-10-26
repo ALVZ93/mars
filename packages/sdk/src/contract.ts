@@ -118,6 +118,31 @@ export function outputShape(output: string): string {
 /** `covers` and `cases` state what the reproduction asserts: the proof is only as wide as these cases. */
 export interface ReproductionDeclaration { command: string; files: string[]; covers: string; cases: string[] }
 
+export interface OutdatedTestDeclaration { command: string; files: string[]; reason: string }
+
+/**
+ * Tool offered with declare_reproduction: the agent claims that an existing test encodes an outdated expectation
+ * and that the code is right. MARS checks it (original fails, edited passes) and reports it for human review.
+ */
+export function outdatedTestTool(onDeclare: (value: OutdatedTestDeclaration) => void): Tool {
+  const schema = z.strictObject({
+    command: z.string().min(1).max(4_096).describe('Exact shell command that runs only the edited test file(s), from the workspace root.'),
+    files: z.array(z.string().min(1).max(4_096)).min(1).max(16).describe('Existing test files edited in this phase to the correct expectation.'),
+    reason: z.string().min(1).max(120).describe('Why the original expectation is outdated, in one sentence, citing the source of truth (report, docs, spec).'),
+  });
+  return {
+    name: 'declare_outdated_test',
+    description: 'Use instead of declare_reproduction only when the code is right and an existing test is wrong: edit that test to the correct expectation first. MARS requires the original test to fail and the edited one to pass on the unchanged code, skips the fix, and reports a test change that needs human review.',
+    parameters: z.toJSONSchema(schema),
+    validate: input => schema.parse(input),
+    async execute(input) {
+      const value = input as OutdatedTestDeclaration;
+      onDeclare({ command: value.command.trim(), files: value.files.map(normalize), reason: value.reason.replace(/\s+/g, ' ').trim() });
+      return 'Outdated test declared. Do not call more tools: reply with one short sentence. MARS runs the original and the edited test next.';
+    },
+  };
+}
+
 /** Tool offered only during a reproduction phase; the agent declares how to run its failing test. */
 export function reproductionTool(onDeclare: (value: ReproductionDeclaration) => void): Tool {
   const schema = z.strictObject({

@@ -36,6 +36,8 @@ export function relativizePaths(text: string, root?: string, home = homedir()): 
 export function receiptVerdict(report: RunReport): { ok: boolean; label: string } {
   if (report.status !== 'completed') return { ok: false, label: report.status === 'cancelled' ? 'Cancelled' : `Failed${report.error ? ` (${report.error})` : ''}` };
   if (report.contract?.modified.length) return { ok: false, label: 'Contract violated' };
+  // Never ok: which expectation is right is a human decision, so it must not open an automation gate.
+  if (report.testUpdate) return { ok: false, label: report.verificationStatus === 'passed' ? 'Test change proposed' : 'Not proven' };
   if (report.proof && (!report.proof.green || report.verificationStatus !== 'passed')) return { ok: false, label: 'Not proven' };
   if (report.proof) return { ok: true, label: 'Fixed and proven' };
   if (report.verificationStatus === 'passed') return { ok: true, label: 'Verified' };
@@ -53,7 +55,7 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
     const c = (value: string) => code(clean(value));
     const b = (value: string) => block(clean(value));
     const verdict = receiptVerdict(report);
-    lines.push(`## ${verdict.ok ? '✅' : '❌'} ${text(options.title ?? 'MARS') || 'MARS'} — ${verdict.label}`, '');
+    lines.push(`## ${verdict.ok ? '✅' : verdict.label === 'Test change proposed' ? '⚠️' : '❌'} ${text(options.title ?? 'MARS') || 'MARS'} — ${verdict.label}`, '');
     lines.push(`${report.kind}${report.workflow ? ` ${c(report.workflow)}` : ''} · ${report.startedAt.slice(0, 19).replace('T', ' ')} UTC · ${seconds(report.durationMs)} · run ${c(report.id.slice(0, 8))}`, '');
 
     if (report.proof) {
@@ -66,6 +68,16 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
       if (proof.control) lines.push(`- With the test emptied: exit ${proof.control.exitCode ?? '?'} — the failure comes from the test`);
       lines.push(`- After the fix: ${proof.green ? `passed (exit ${proof.green.exitCode})` : 'not passing'}`);
       lines.push('', '<details><summary>Failure before the fix</summary>', '', ...b(proof.red.output || '(no output)'), '', '</details>', '');
+    }
+    if (report.testUpdate) {
+      const update = report.testUpdate;
+      lines.push('### Test change proposed', '');
+      lines.push(`Reason declared by the agent: ${text(clean(update.reason))}`, '');
+      lines.push(`Test: ${c(update.command)} (${update.files.map(c).join(', ')})`, '');
+      lines.push(`- Original test: ${update.original.exitCode === null ? 'did not run' : `failed with exit ${update.original.exitCode}`} on the unchanged code`);
+      lines.push(`- Updated test: passed (exit ${update.updated.exitCode})`);
+      lines.push('', '_No fix was attempted. This needs human review: MARS can show that the edited test matches the code, not which expectation is right._', '');
+      lines.push('<details><summary>Original test failure</summary>', '', ...b(update.original.output || '(no output)'), '', '</details>', '');
     }
     if (report.contract) {
       const { files, modified } = report.contract;

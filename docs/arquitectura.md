@@ -76,7 +76,9 @@ Detalle y casos de prueba en el [ADR 008](decisions/008-bugfix-proof-contract-an
 
 El recibo muestra `covers` y `cases` como alcance declarado por el agente: *Fixed and proven* garantiza esos casos, no el resto del contrato. Lo que quede fuera solo lo cubren los checks del proyecto.
 
-Veredictos del recibo: *Fixed and proven*, *Verified*, *Contract violated*, *Not proven*, *Failed*, *Completed without verification*.
+**Test desactualizado.** Si el código ya cumple el contrato y lo que falla es un test existente, el agente edita ese test y llama a `declare_outdated_test({ command, files, reason })` en lugar de `declare_reproduction`. MARS lo comprueba sobre el código sin cambios: los archivos deben ser tests existentes editados en esa fase, la versión original debe fallar por una aserción y la editada debe pasar. Después no hay fase de arreglo, los tests editados quedan protegidos y se ejecutan los checks. El veredicto es *Test change proposed* (⚠️). Nunca cuenta como éxito automático, porque decidir qué expectativa es la correcta corresponde a una persona.
+
+Veredictos del recibo: *Fixed and proven*, *Test change proposed*, *Verified*, *Contract violated*, *Not proven*, *Failed*, *Completed without verification*.
 
 ## Aislamiento
 
@@ -125,7 +127,7 @@ Interfaz común `ModelProvider.stream(request, signal)` en `core/providers.ts`.
 
 - Cada tarea trae un repo, un **test oculto** que el agente nunca ve y una solución de referencia. `node evals/validate.mjs` comprueba el corpus sin modelo.
 - `node evals/run.mjs` ejecuta MARS y el modelo sin MARS sobre las mismas tareas.
-- La métrica principal es la **falsa prueba**: el recibo dice *Fixed and proven* y el test oculto falla.
+- La métrica principal es la **falsa prueba**: el recibo dice *Fixed and proven* y el test oculto falla. Se clasifica por los tests ocultos que fallan: `reported` si falla el ejemplo del informe (`reportedTests` de la tarea), es decir, la prueba era falsa; `scope` si fallan otros casos del contrato que la reproducción no cubría; `checks` si fallan los checks del proyecto.
 
 Resultados en [evals/RESULTS.md](../evals/RESULTS.md).
 

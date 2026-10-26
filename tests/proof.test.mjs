@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createMars, renderReceipt } from '../dist/packages/sdk/src/index.js';
+import { createMars, receiptVerdict, renderReceipt } from '../dist/packages/sdk/src/index.js';
 import { FakeProvider, Workspace, WorkflowRegistry, loadConfig, projectConfigPath, runProjectChecks } from '../dist/packages/sdk/src/internal.js';
 import { executeShell } from '../dist/packages/tools/src/index.js';
 
@@ -334,4 +334,64 @@ test('receipts print paths relative to the execution root and the home directory
   assert.ok(!receipt.includes(homedir().replaceAll('\\', '/')), receipt);
   assert.match(receipt, /\(\.\/test\/a\.test\.js:5:56\)/);
   assert.match(receipt, /~[\\/]\.cache[\\/]x/);
+});
+
+// An existing test that encodes an outdated expectation: the code is right, the test is not.
+const OUTDATED = 'import { add } from "../calc.mjs";\nif (add(2, 3) !== 6) { console.error("expected 6, got " + add(2, 3)); process.exit(1); }\n';
+const outdated = (command, files, reason = 'expects 6 for add(2, 3); the documented sum is 5') => call('declare_outdated_test', { command, files, reason });
+async function outdatedProject(t) {
+  const root = await project(t);
+  await writeFile(path.join(root, 'calc.mjs'), FIXED);
+  await mkdir(path.join(root, 'tests'));
+  await writeFile(path.join(root, 'tests', 'calc.test.mjs'), OUTDATED);
+  return root;
+}
+
+test('an outdated test is proposed for review: original fails, updated passes, source untouched', async t => {
+  const root = await outdatedProject(t);
+  const instance = await mars(t, root, [answer('inspected'), write('tests/calc.test.mjs', TEST), outdated('node tests/calc.test.mjs', ['tests/calc.test.mjs']), answer('declared'), answer('reviewed')]);
+  await instance.runWorkflow('bugfix', 'npm test fails on add');
+  const report = instance.lastRun;
+  assert.equal(report.status, 'completed');
+  assert.equal(report.proof, undefined);
+  assert.equal(report.testUpdate.command, 'node tests/calc.test.mjs');
+  assert.deepEqual(report.testUpdate.files, ['tests/calc.test.mjs']);
+  assert.notEqual(report.testUpdate.original.exitCode, 0);
+  assert.match(report.testUpdate.original.output, /expected 6, got 5/);
+  assert.deepEqual(report.testUpdate.updated, { exitCode: 0 });
+  assert.equal(await readFile(path.join(root, 'calc.mjs'), 'utf8'), FIXED);
+  assert.equal(await readFile(path.join(root, 'tests', 'calc.test.mjs'), 'utf8'), TEST);
+  assert.deepEqual(report.contract, { files: ['tests/calc.test.mjs'], modified: [] });
+  assert.equal(report.verificationStatus, 'passed');
+  assert.deepEqual(receiptVerdict(report), { ok: false, label: 'Test change proposed' });
+  const receipt = renderReceipt([report]);
+  assert.match(receipt, /⚠️ MARS — Test change proposed/);
+  assert.match(receipt, /Reason declared by the agent: expects 6 for add\(2, 3\); the documented sum is 5/);
+  assert.match(receipt, /Original test: failed with exit 1/);
+  assert.match(receipt, /Updated test: passed \(exit 0\)/);
+  assert.match(receipt, /needs human review/i);
+});
+
+test('declare_outdated_test is rejected unless an edited existing test failed and now passes', async t => {
+  await t.test('original already passes', async t => {
+    const root = await outdatedProject(t);
+    await writeFile(path.join(root, 'tests', 'calc.test.mjs'), TEST);
+    const instance = await mars(t, root, [answer(), write('tests/calc.test.mjs', `${TEST}// note\n`), outdated('node tests/calc.test.mjs', ['tests/calc.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /original test passes/);
+  });
+  await t.test('updated still fails', async t => {
+    const root = await outdatedProject(t);
+    const instance = await mars(t, root, [answer(), write('tests/calc.test.mjs', `${OUTDATED}// still wrong\n`), outdated('node tests/calc.test.mjs', ['tests/calc.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /updated test does not pass/);
+  });
+  await t.test('new file instead of an edited test', async t => {
+    const root = await outdatedProject(t);
+    const instance = await mars(t, root, [answer(), write('tests/other.test.mjs', TEST), outdated('node tests/other.test.mjs', ['tests/other.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /only existing tests edited in this phase/);
+  });
+  await t.test('both declarations', async t => {
+    const root = await outdatedProject(t);
+    const instance = await mars(t, root, [answer(), write('tests/calc.test.mjs', TEST), outdated('node tests/calc.test.mjs', ['tests/calc.test.mjs']), declare('node tests/calc.test.mjs', ['tests/calc.test.mjs']), answer()]);
+    await assert.rejects(instance.runWorkflow('bugfix', 'bug'), /either a reproduction or an outdated test/);
+  });
 });

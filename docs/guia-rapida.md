@@ -36,6 +36,8 @@ MARS hace esto, en orden:
 
 El recibo, extractado, sale en inglés para poder pegarlo en un PR de cualquier equipo. Dice: qué casos cubre la prueba (solo esos quedan demostrados), falló antes del arreglo, el fallo viene del test, pasa después, el test protegido no cambió, y estos son los archivos cambiados.
 
+Si el código está bien y lo que falla es un test antiguo, MARS no «arregla» el código: propone el cambio del test con ⚠️ *Test change proposed* y te deja decidir.
+
 Si algo sale mal (no se pudo reproducir, se acabó el tiempo, alguien tocó el test), el recibo lo dice. MARS no adorna resultados.
 
 ## Tu código está a salvo
