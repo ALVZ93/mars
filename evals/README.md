@@ -20,6 +20,14 @@ node evals/validate.mjs csv-quoted-commas
 | `emitter-once-skips-next` | fix · hard | mutation during iteration; snapshot semantics for add/remove during emit |
 | `config-merge-pollution` | fix · hard | a prototype-pollution vulnerability reported as a strange `isAdmin` symptom |
 | `trap-outdated-test` | fix · trap | the test is wrong, not the code: the correct fix edits only the test |
+| `money-half-away` | fix · hard | half-cent rounding on binary floats; the `Number.EPSILON` fix fails on 10.075 and on negatives |
+| `glob-doublestar` | fix · hard | `**/` must match zero folders; also unescaped regex characters, `?` crossing `/`, `[!x]`, `\*` |
+| `debounce-leading` | fix · hard | leading + trailing fires twice for one call; also `this`, `flush`, `cancel` semantics |
+| `query-repeated-keys` | fix · hard | repeated keys lost; also `+`, `#`, `=` in values, malformed `%`, no prototype |
+| `pool-order` | fix · hard | results in completion order; also no new tasks after a rejection |
+| `wrap-graphemes` | fix · hard | width must count grapheme clusters; counting code points is not enough |
+| `monthly-month-end` | fix · hard | Jan 31 skips February; clamping the date drifts to the 28th afterwards |
+| `stale-profile-cache` | fix · hard · misleading | the report blames `format.js`; the stale cache (and a cached miss) is in `store.js` |
 
 A run is **correct** when the hidden tests and the project checks both pass on the final tree. `initialChecksFail` marks tasks whose suite is red from the start. `reportedTests` names the hidden tests that check the reported example: a false proof that fails one of them is `reported` (the proof was wrong), otherwise `scope` (a case the reproduction did not cover) or `checks`. MARS runs ending in *Test change proposed* are counted as `needsReview`, never as a claim.
 

@@ -1,5 +1,25 @@
 # Eval results
 
+## 2026-10-30 — harder corpus: 8 new tasks, vendor CLIs alone
+
+Each new task documents its contract in the module (doc comment) and reports only one symptom of it; the hidden tests check the documented contract. Claude Code (`claude -p`, Sonnet 4.6, low effort) and `codex exec` (`gpt-5.6-sol`, low effort), 2 runs each. Rows: `results/2026-10-30T10-42-50-342Z.jsonl` (both conditions).
+
+| Task | Claude Code | `codex exec` | What the failing runs missed |
+| --- | --- | --- | --- |
+| `money-half-away` | 0/2 | 2/2 | -0 for small negatives; halves stored below (10.075) |
+| `glob-doublestar` | 0/2 | 0/2 | only `**/` fixed: `?` crossing `/`, unescaped `.`/`+`, `[!x]`, `\*`, `**` inside a segment |
+| `debounce-leading` | 0/2 | 1/2 | `flush` without `this`, or calling fn with nothing pending |
+| `query-repeated-keys` | 2/2 | 2/2 | — |
+| `pool-order` | 0/2 | 0/2 | tasks still started after a rejection |
+| `wrap-graphemes` | 0/2 | 1/2 | words longer than the width are not split |
+| `monthly-month-end` | 2/2 | 2/2 | — |
+| `stale-profile-cache` | 0/2 | 2/2 | only `renameUser` fixed: re-saved users and cached misses stay stale |
+| **Correct** | **4/16 (25 %)** | **10/16 (63 %)** | |
+
+- **The corpus now separates.** Six of the eight tasks fail at least half of the runs of one vendor. `query-repeated-keys` and `monthly-month-end` are solved by both and stay as controls.
+- **Every failure is a fix of the reported symptom only.** All 8 failing runs of each vendor claimed success; the hidden tests that failed check rules written in the same file's documentation.
+- **This is the case MARS is built for:** the reproduction must cover the documented contract, not the example, and the proof shows which cases it covers. Next: the same tasks with `mars-claude` and `mars-codex`.
+
 ## 2026-10-26 — MARS with a vendor CLI as engine (`--engine claude|codex`)
 
 `bugfix --engine X`: the vendor CLI writes the reproduction test (turn 1), MARS checks the tree (only tests changed), red, control and contract, then the same session fixes (turn 2) and MARS checks green and the project checks. Both engines at low effort. Rows: `results/2026-10-26T15-50-30-317Z.jsonl` (MARS + Claude, final version), `results/2026-10-26T15-36-33-374Z.jsonl` (MARS + Codex; its last 5 tasks ran after the `reported` field was added), `results/2026-10-26T15-36-32-683Z.jsonl` (MARS + Claude, first version, kept for the failures below).

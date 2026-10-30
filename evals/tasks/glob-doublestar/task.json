@@ -1,0 +1,22 @@
+{
+  "id": "glob-doublestar",
+  "title": "src/**/*.js no encuentra archivos directamente en src",
+  "kind": "fix",
+  "tags": [
+    "spec",
+    "edge-cases",
+    "regex"
+  ],
+  "report": "El patrón `src/**/*.js` no encuentra `src/index.js`, solo archivos en subcarpetas. Según la documentación de matchGlob (src/glob.js), `**` también vale cero carpetas.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

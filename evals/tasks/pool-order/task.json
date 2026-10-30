@@ -1,0 +1,22 @@
+{
+  "id": "pool-order",
+  "title": "runPool devuelve los resultados desordenados",
+  "kind": "fix",
+  "tags": [
+    "async",
+    "concurrency",
+    "multi-bug"
+  ],
+  "report": "runPool (src/pool.js) devuelve los resultados en el orden en que terminan las tareas, no en el orden de entrada: con tareas que tardan distinto, las miniaturas se asignan a la foto equivocada.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

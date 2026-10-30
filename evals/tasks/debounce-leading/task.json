@@ -1,0 +1,22 @@
+{
+  "id": "debounce-leading",
+  "title": "debounce con leading y trailing ejecuta dos veces una sola llamada",
+  "kind": "fix",
+  "tags": [
+    "timers",
+    "state",
+    "spec"
+  ],
+  "report": "Con debounce(fn, 100, { leading: true, trailing: true }) (src/debounce.js), un único clic guarda el formulario dos veces: una al hacer clic y otra 100 ms después. Una sola llamada debería ejecutar fn una sola vez.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

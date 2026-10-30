@@ -1,0 +1,22 @@
+{
+  "id": "stale-profile-cache",
+  "title": "La cabecera del perfil muestra el nombre antiguo",
+  "kind": "fix",
+  "tags": [
+    "misleading-report",
+    "cache",
+    "multi-file"
+  ],
+  "report": "Tras renombrar a un usuario, la cabecera del perfil sigue mostrando el nombre antiguo. Parece que profileTitle (src/format.js) se queda con el título de la primera vez. Debería mostrar siempre los datos actuales del usuario.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

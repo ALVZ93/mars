@@ -1,0 +1,22 @@
+{
+  "id": "wrap-graphemes",
+  "title": "wrap corta antes de tiempo las líneas con emojis",
+  "kind": "fix",
+  "tags": [
+    "unicode",
+    "spec",
+    "edge-cases"
+  ],
+  "report": "En las notificaciones, `wrap(\"👍🏽 👍🏽 👍🏽\", 5)` (src/wrap.js) pone cada emoji en su propia línea, aunque los tres caben en una línea de 5 caracteres. Las líneas con emojis se cortan antes de tiempo.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

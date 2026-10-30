@@ -1,0 +1,22 @@
+{
+  "id": "money-half-away",
+  "title": "El redondeo al céntimo pierde medios céntimos",
+  "kind": "fix",
+  "tags": [
+    "floating-point",
+    "spec",
+    "edge-cases"
+  ],
+  "report": "En el ticket, un artículo de 1,005 € aparece como 1,00 € en lugar de 1,01 €. El redondeo al céntimo debería ser «mitad lejos de cero», como dice src/money.js.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}

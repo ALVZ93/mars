@@ -1,0 +1,22 @@
+{
+  "id": "query-repeated-keys",
+  "title": "parseQuery pierde las claves repetidas",
+  "kind": "fix",
+  "tags": [
+    "spec",
+    "edge-cases",
+    "parsing"
+  ],
+  "report": "Con `?tags=a&tags=b`, parseQuery (src/query.js) devuelve solo `tags: \"b\"`; el filtro por varias etiquetas no funciona. Según su documentación, una clave repetida debería dar un array.",
+  "scope": [
+    "src/**",
+    "test/**"
+  ],
+  "hidden": "node --test .eval-hidden/hidden.test.mjs",
+  "reportedTests": [
+    "reported case"
+  ],
+  "checks": [
+    "npm test"
+  ]
+}
