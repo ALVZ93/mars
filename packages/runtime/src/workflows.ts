@@ -13,6 +13,8 @@ export interface WorkflowDefinition {
   id: string;
   description: string;
   phases: readonly WorkflowPhase[];
+  /** Runs through vendor agent CLIs instead of MARS's own phases: one agent implements, another reviews (ADR 010). */
+  engines?: 'cross-review';
   /** Explicit implementation phase to reuse after a failing verification check. */
   repairPhase?: string;
   matches(task: string): boolean;
@@ -48,7 +50,19 @@ const feature: WorkflowDefinition = {
   matches: () => true,
 };
 
-export const BUILTIN_WORKFLOWS: readonly WorkflowDefinition[] = [bugfix, review, feature];
+const crossReview: WorkflowDefinition = {
+  id: 'cross-review', description: 'One agent implements, an agent from another engine reviews, findings go back to the implementer.',
+  engines: 'cross-review',
+  phases: [
+    { id: 'implement', role: 'implementer', instruction: 'Implement the task so that the code meets its documented contract; add or update tests; run the project checks.' },
+    { id: 'review', role: 'reviewer', instruction: 'Read-only review of the diff against the task and the documented contract of the code involved.' },
+    { id: 'verify', role: 'verifier', instruction: 'MARS runs the configured checks after each implementation round.', verification: true },
+  ],
+  // Needs two agents, so it is never picked automatically.
+  matches: () => false,
+};
+
+export const BUILTIN_WORKFLOWS: readonly WorkflowDefinition[] = [bugfix, review, feature, crossReview];
 
 export class WorkflowRegistry {
   #workflows = new Map<string, WorkflowDefinition>();

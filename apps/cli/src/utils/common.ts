@@ -15,6 +15,7 @@ mars check                            Run project verification scripts
 mars models                           List known models and auth state
 mars route "task"                    Explain deterministic model routing
 mars workflows                        List built-in workflows
+mars agents                           List agents (built-in and .mars/agents/*.md)
 mars doctor                           Diagnose local configuration
   mars init                             Create .mars/config.json
   mars config [show|path|set KEY VALUE] Read or update configuration
@@ -53,11 +54,14 @@ Options:
   --retry-delay Initial retry delay in milliseconds (default: 500)
   --sandbox     Shell mode: host (default) or docker
   --route       Enable deterministic role-based model routing
-  --workflow    Run a workflow (bugfix, feature or review)
+  --workflow    Run a workflow (bugfix, feature, review or cross-review)
   --repair-attempts Repair failing workflow checks (0 to 3; default: 0)
   --engine      Let an agent CLI do the bugfix work (claude or codex); MARS still proves it.
                 claude runs Claude Code with ANTHROPIC_API_KEY only (never a Claude subscription login)
   --engine-model Model for --engine (default: sonnet for claude, gpt-5.6-sol for codex)
+  --implementer Agent that implements in cross-review (e.g. codex)
+  --reviewer    Agent that reviews read-only in cross-review (e.g. claude)
+  --review-rounds Correction rounds after a review with findings (0 to 3; default: 1)
   --report      Export run/check reports as JSON to a new workspace file
   --receipt     Export a Markdown receipt (proof, contract, checks, changes) to a new workspace file
   --verify      Run standard project checks after the agent finishes

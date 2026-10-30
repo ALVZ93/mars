@@ -257,3 +257,17 @@ export async function discardIsolatedRun(source: string, id: string): Promise<vo
   await git(run.top, ['update-ref', '-d', ref(id, 'result')], { allowFailure: true });
   await git(run.top, ['update-ref', '-d', ref(id, 'base')]);
 }
+
+/**
+ * Uncommitted changes of a Git working tree against HEAD, new files included, for a reviewer to read.
+ * Read-only: the index is never touched. Returns undefined outside a Git repository.
+ */
+export async function workingDiff(cwd: string, maxChars = 60_000): Promise<string | undefined> {
+  if ((await git(cwd, ['rev-parse', '--verify', 'HEAD'], { allowFailure: true })).code !== 0) return undefined;
+  const flags = ['--no-ext-diff', '--no-textconv', '--no-color'];
+  let diff = (await git(cwd, ['diff', ...flags, 'HEAD', '--'])).stdout;
+  const untracked = (await git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout.split('\0').filter(Boolean);
+  // --no-index exits 1 when the files differ, which is always the case here.
+  for (const file of untracked) diff += (await git(cwd, ['diff', ...flags, '--no-index', '--', '/dev/null', file], { allowFailure: true })).stdout;
+  return diff.length > maxChars ? `${diff.slice(0, maxChars)}\n[diff truncated at ${maxChars} characters]` : diff;
+}

@@ -221,3 +221,28 @@ export function reproductionTool(onDeclare: (value: ReproductionDeclaration) => 
     },
   };
 }
+
+/** Structured answer of a cross-review turn (ADR 010). Every field is required so strict output schemas accept it. */
+export const REVIEW_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['verdict', 'findings'],
+  properties: {
+    verdict: { type: 'string', enum: ['approve', 'changes'], description: 'approve when you found no concrete problem.' },
+    findings: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false, required: ['file', 'problem', 'fix'], properties: {
+      file: { type: 'string', description: 'Workspace-relative path, or empty for a general finding.' },
+      problem: { type: 'string', description: 'The concrete bug or broken documented rule, with an input that shows it.' },
+      fix: { type: 'string', description: 'What the code should do instead.' },
+    } } },
+  },
+} as const;
+
+/** Validates and clips a review answer. `changes` without findings leaves nothing to act on, so it counts as approval. */
+export function reviewOutput(output: unknown): { verdict: 'approve' | 'changes'; findings: Array<{ file: string; problem: string; fix: string }> } {
+  const value = output as { verdict?: unknown; findings?: unknown } | null;
+  if (!value || (value.verdict !== 'approve' && value.verdict !== 'changes') || !Array.isArray(value.findings)) throw new MarsError('ToolExecutionError', 'The reviewer did not return a valid review (verdict and findings).');
+  const clip = (item: unknown, max: number) => typeof item === 'string' ? item.slice(0, max) : '';
+  const findings = value.findings.slice(0, 20).map(item => {
+    const finding = (item ?? {}) as Record<string, unknown>;
+    return { file: clip(finding.file, 300), problem: clip(finding.problem, 1_000), fix: clip(finding.fix, 1_000) };
+  }).filter(finding => finding.problem.trim());
+  return { verdict: value.verdict === 'changes' && findings.length ? 'changes' : 'approve', findings };
+}

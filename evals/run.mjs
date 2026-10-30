@@ -1,5 +1,6 @@
 // Runs the eval corpus in several conditions and records one JSONL row per run.
 //   mars-claude, mars-codex: MARS bugfix with --engine claude|codex doing the work
+//   xr-codex-claude, xr-claude-codex: MARS cross-review, the first agent implements and the second reviews (ADR 010)
 //   claude:   Claude Code `claude -p --bare` with ANTHROPIC_API_KEY only, edits accepted, shell limited to npm/node
 //   agy:      Antigravity `agy -p` in its sandbox with edits accepted
 //   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
@@ -45,9 +46,9 @@ async function prepare(task) {
   return work;
 }
 
-function runMars(task, work, extra = []) {
+function runMars(task, work, extra = ['--workflow', 'bugfix']) {
   const started = Date.now();
-  const r = spawnSync(process.execPath, [cli, 'run', task.report, '--workflow', 'bugfix', '--isolate', '--model', values.model, '--allow-shell',
+  const r = spawnSync(process.execPath, [cli, 'run', task.report, '--isolate', '--model', values.model, '--allow-shell',
     '--timeout', '300000', '--max-retries', '2', '--budget-requests', '60', '--budget-time', String(timeoutMs), '--receipt', 'receipt.md', '--report', 'report.json', '--no-animation', ...extra],
     { cwd: work, encoding: 'utf8', windowsHide: true, timeout: timeoutMs + 120_000, input: '' });
   return { seconds: (Date.now() - started) / 1000, exit: r.status, log: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -59,7 +60,7 @@ async function finishMars(work, run) {
   if (report?.isolation?.files.length) spawnSync(process.execPath, [cli, 'runs', 'apply', report.isolation.id], { cwd: work, encoding: 'utf8', windowsHide: true });
   const verdict = report ? receiptVerdict(report) : { ok: false, label: 'No report' };
   const tokens = report?.usage.reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0) ?? null;
-  return { status: report?.status ?? 'missing', error: report?.error, verdict: verdict.label, claimed: verdict.label === 'Fixed and proven', needsReview: verdict.label === 'Test change proposed', proofScope: report?.proof?.scope, requests: report?.modelRequests ?? null, tokens, tokensKnown: report?.budget?.tokensKnown ?? false, repairs: report?.repairAttempts ?? 0, seconds: run.seconds };
+  return { status: report?.status ?? 'missing', error: report?.error, verdict: verdict.label, claimed: verdict.ok, needsReview: verdict.label === 'Test change proposed', proofScope: report?.proof?.scope, reviews: report?.reviews?.map(review => ({ verdict: review.verdict, findings: review.findings.length })), requests: report?.modelRequests ?? null, tokens, tokensKnown: report?.budget?.tokensKnown ?? false, repairs: report?.repairAttempts ?? 0, seconds: run.seconds };
 }
 
 // Same instructions for every vendor CLI.
@@ -131,6 +132,7 @@ async function evaluate(task, work) {
   return { diff, hiddenOutput: hidden.output, hiddenPass: hidden.ok, hiddenFailed: hidden.ok ? [] : failedTests(hidden.output), checksPass, correct: hidden.ok && checksPass, changed, outOfScope: task.kind === 'fix' ? changed.filter(file => !matches(file, task.scope)) : [], sourceChanged };
 }
 
+const isMarsCondition = condition => condition.startsWith('mars') || condition.startsWith('xr-');
 const tasksDir = path.join(here, 'tasks');
 const ids = positionals.length ? positionals : (await readdir(tasksDir, { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
 const conditions = values.conditions.split(',');
@@ -143,8 +145,10 @@ for (const id of ids) {
     process.stderr.write(`▶ ${id} · ${condition}\n`);
     let row;
     try {
-      const isMars = condition.startsWith('mars');
-      const marsRun = isMars ? runMars(task, work, condition === 'mars' ? [] : ['--engine', condition.slice('mars-'.length)]) : undefined;
+      const crossReview = condition.match(/^xr-(\w+)-(\w+)$/);
+      const isMars = condition.startsWith('mars') || Boolean(crossReview);
+      const marsRun = !isMars ? undefined : crossReview ? runMars(task, work, ['--workflow', 'cross-review', '--implementer', crossReview[1], '--reviewer', crossReview[2]])
+        : runMars(task, work, condition === 'mars' ? undefined : ['--workflow', 'bugfix', '--engine', condition.slice('mars-'.length)]);
       if (!marsRun && !engines[condition]) throw new Error(`Unknown condition: ${condition}`);
       const result = marsRun ? await finishMars(work, marsRun) : engines[condition](task, work);
       // Keep the evidence of every run next to the results for later diagnosis.
@@ -167,7 +171,7 @@ for (const id of ids) {
       row = { task: id, kind: task.kind, condition, model: values.model, status: 'harness-error', error: String(error?.message ?? error), at: new Date().toISOString() };
     } finally { await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
     await appendFile(out, `${JSON.stringify(row)}\n`);
-    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : `FAIL${row.falseProofKind ? ` (${row.falseProofKind})` : ''}`} · ${condition.startsWith('mars') ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
+    process.stderr.write(`  ${row.status} · hidden ${row.hiddenPass ? 'pass' : `FAIL${row.falseProofKind ? ` (${row.falseProofKind})` : ''}`} · ${isMarsCondition(condition) ? row.verdict : `claimed ${row.claimed}`} · ${row.seconds?.toFixed?.(0) ?? '?'} s · ${row.tokens ?? '?'} tokens\n`);
   }
 }
 process.stdout.write(`${out}\n`);

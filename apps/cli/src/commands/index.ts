@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FakeProvider, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
+import { FakeProvider, loadAgents, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
 import type { CredentialStore, RouteDecision, VerificationReport, RunReport } from '../../../../packages/sdk/src/internal.js';
 import { providerAuthCatalog } from '../../../../packages/auth/src/index.js';
 import { showMarsBoot } from '../visual.js';
@@ -209,6 +209,12 @@ export async function resumeSession(id: string, root: string, workspaceWasExplic
   }
   throw new MarsError('ConfigurationError', `Session not found: ${id}`);
 }
+export async function agentsCommand(root: string, json: boolean): Promise<void> {
+  const agents = [...(await loadAgents(root)).values()];
+  if (json) { process.stdout.write(`${JSON.stringify(agents.map(({ instructions, ...agent }) => ({ ...agent, instructions: Boolean(instructions) })), null, 2)}\n`); return; }
+  for (const agent of agents) process.stdout.write(`${agent.name}\t${agent.engine}${agent.model ? `:${agent.model}` : ''}\t${agent.edit === 'deny' ? 'read-only' : 'edits'}\t${agent.source}\t${safe(agent.description)}\n`);
+}
+
 export async function workflowsCommand(): Promise<void> {
   const mars = await createMars({ workspace: process.cwd(), provider: new FakeProvider(), model: 'scripted', includeProjectContext: false });
   for (const workflow of mars.workflows) process.stdout.write(`${workflow.id}\t${workflow.description}\n`);

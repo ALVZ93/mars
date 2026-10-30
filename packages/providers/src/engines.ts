@@ -10,7 +10,11 @@ import { CodexCliRunner, terminate } from './codex-runner.js';
 export interface AgentEngine {
   readonly id: string;
   readonly model: string;
-  session(cwd: string): EngineSession;
+  session(cwd: string, options?: EngineSessionOptions): EngineSession;
+}
+export interface EngineSessionOptions {
+  /** No file edits: enforced by the engine's own tools or sandbox. MARS also checks the tree afterwards. */
+  readOnly?: boolean;
 }
 export interface EngineSession {
   /** One turn that ends in JSON matching `schema`; later turns resume the same conversation. */
@@ -44,7 +48,7 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
   const commands = options.commands ?? ['npm', 'node'];
   return {
     id: 'claude-code', model,
-    session(cwd) {
+    session(cwd, sessionOptions = {}) {
       if (!options.localLogin && !(options.env ?? process.env).ANTHROPIC_API_KEY) throw new Error('--engine claude needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.');
       const id = randomUUID();
       let started = false;
@@ -55,7 +59,7 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
           for (let attempt = 0; ; attempt++) {
             const args = ['-p', ...(options.localLogin ? [] : ['--bare']), '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort,
               '--setting-sources', 'project', '--strict-mcp-config', '--disable-slash-commands', '--permission-mode', 'acceptEdits',
-              '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', ...commands.map(command => `Bash(${command}:*)`),
+              '--allowedTools', 'Read', ...(sessionOptions.readOnly ? [] : ['Edit', 'Write']), 'Glob', 'Grep', ...commands.map(command => `Bash(${command}:*)`),
               '--json-schema', JSON.stringify(schema), ...(started ? ['--resume', id] : ['--session-id', id])];
             const input = attempt ? 'You ended without the structured output. Do not repeat the work: answer now with the structured output only.' : prompt;
             const stdout = await run(options.executable ?? 'claude', args, cwd, input, signal, 'Claude Code');
@@ -89,8 +93,8 @@ export function codexEngine(options: CodexEngineOptions = {}): AgentEngine {
   const runner = options.runner ?? new CodexCliRunner();
   return {
     id: 'codex-cli', model,
-    session(cwd) {
-      const thread = runner.startThread({ model, workingDirectory: cwd, sandboxMode: 'workspace-write', approvalPolicy: 'never', skipGitRepoCheck: true, networkAccessEnabled: false,
+    session(cwd, sessionOptions = {}) {
+      const thread = runner.startThread({ model, workingDirectory: cwd, sandboxMode: sessionOptions.readOnly ? 'read-only' : 'workspace-write', approvalPolicy: 'never', skipGitRepoCheck: true, networkAccessEnabled: false,
         modelReasoningEffort: effort,
         // --ignore-user-config drops the user's Windows sandbox mode; the default one rejects every command.
         ...(process.platform === 'win32' ? { windowsSandbox: 'elevated' } : {}) });

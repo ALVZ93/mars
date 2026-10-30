@@ -191,5 +191,6 @@ export { MODEL_CATALOG, ModelRegistry, routeTask, classifyTask, type RouteOption
 export { BUILTIN_WORKFLOWS, WorkflowRegistry, selectWorkflow, type WorkflowDefinition, type WorkflowPhase } from './workflows.js';
 export { FileEvidenceStore, evidencePath, type EvidenceRun, type EvidenceSnapshot, type EvidenceStore, type EvidenceSuggestion, type SkillEvidence, type WorkflowEvidence } from './evidence.js';
 export { FileEventLog, ProviderHealthTracker, eventLogPath, readEventLog, readEventLogEntries, type EventLogEntry, type FileEventLogOptions, type ProviderHealth } from './observability.js';
-export { openIsolatedWorkspace, captureIsolatedResult, isolatedRunExists, listIsolatedRuns, isolatedDiff, applyIsolatedRun, discardIsolatedRun, type IsolatedWorkspace, type IsolatedRun, type IsolatedResult, type IsolationOptions } from './isolation.js';
+export { openIsolatedWorkspace, captureIsolatedResult, isolatedRunExists, workingDiff, listIsolatedRuns, isolatedDiff, applyIsolatedRun, discardIsolatedRun, type IsolatedWorkspace, type IsolatedRun, type IsolatedResult, type IsolationOptions } from './isolation.js';
 export { FileKnowledgeStore, memoryData, redactKnowledgeSecrets, type KnowledgeStore, type KnowledgeSnapshot, type KnowledgeEntry, type KnowledgeProposal, type KnowledgeSource, type KnowledgeKind } from './knowledge.js';
+export { BUILTIN_AGENTS, agentsDirectory, loadAgents, parseAgent, type AgentDefinition } from './agents.js';

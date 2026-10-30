@@ -34,9 +34,14 @@ export interface RunReport {
   proof?: { phase: string; command: string; files: string[]; scope?: { reported?: string; covers: string; cases: string[] }; red: { exitCode: number | null; output: string }; control?: { exitCode: number | null }; green?: { exitCode: number } };
   /** Files the implementation could not change; `modified` lists violations detected by hash. */
   contract?: { files: string[]; modified: string[] };
+  /** Cross-review: which agent implemented and which reviewed, and every review round. */
+  agents?: { implementer: string; reviewer: string };
+  reviews?: Array<{ round: number; agent: string; verdict: 'approve' | 'changes'; findings: ReviewFinding[] }>;
   /** Isolated runs only: the agent's diff is exactly base..result. */
   isolation?: { id: string; base: string; result: string; files: string[] };
 }
+
+export interface ReviewFinding { file: string; problem: string; fix: string }
 
 export class RunReports {
   #current?: RunReport;
@@ -85,6 +90,8 @@ export class RunReports {
   proofGreen(exitCode: number): void { if (this.#current?.proof) this.#current.proof.green = { exitCode }; }
   contract(value: NonNullable<RunReport['contract']>): void { if (this.#current) this.#current.contract = structuredClone(value); }
   repair(): void { if (this.#current) this.#current.repairAttempts++; }
+  agents(value: NonNullable<RunReport['agents']>): void { if (this.#current) this.#current.agents = { ...value }; }
+  review(value: NonNullable<RunReport['reviews']>[number]): void { if (this.#current) (this.#current.reviews ??= []).push(structuredClone(value)); }
   finish(status: RunReport['status'], error?: ErrorCode): void {
     if (!this.#current) return;
     this.#current.status = status;

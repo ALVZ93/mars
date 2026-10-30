@@ -38,6 +38,8 @@ export function receiptVerdict(report: RunReport): { ok: boolean; label: string 
   if (report.contract?.modified.length) return { ok: false, label: 'Contract violated' };
   // Never ok: which expectation is right is a human decision, so it must not open an automation gate.
   if (report.testUpdate) return { ok: false, label: report.verificationStatus === 'passed' ? 'Test change proposed' : 'Not proven' };
+  // A reviewer from another engine still sees problems: passing checks do not settle it.
+  if (report.reviews?.at(-1)?.verdict === 'changes') return { ok: false, label: 'Review findings open' };
   if (report.proof && (!report.proof.green || report.verificationStatus !== 'passed')) return { ok: false, label: 'Not proven' };
   if (report.proof) return { ok: true, label: 'Fixed and proven' };
   if (report.verificationStatus === 'passed') return { ok: true, label: 'Verified' };
@@ -79,6 +81,15 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
       lines.push(`- Updated test: passed (exit ${update.updated.exitCode})`);
       lines.push('', '_No fix was attempted. This needs human review: MARS can show that the edited test matches the code, not which expectation is right._', '');
       lines.push('<details><summary>Original test failure</summary>', '', ...b(update.original.output || '(no output)'), '', '</details>', '');
+    }
+    if (report.reviews?.length) {
+      lines.push('### Cross-review', '');
+      if (report.agents) lines.push(`Implemented by ${c(report.agents.implementer)}; reviewed by ${c(report.agents.reviewer)}.`, '');
+      for (const review of report.reviews) {
+        lines.push(`- Round ${review.round} (${c(review.agent)}): ${review.verdict === 'approve' ? 'approved' : `${review.findings.length} finding(s)`}`);
+        for (const finding of review.findings.slice(0, 10)) lines.push(`  - ${c(finding.file || '(general)')}: ${text(clean(finding.problem))}`);
+      }
+      lines.push('', '_Findings are the reviewing model\'s opinion, not checks; the checks below were executed by MARS._', '');
     }
     if (report.contract) {
       const { files, modified } = report.contract;

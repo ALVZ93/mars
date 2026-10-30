@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { AnthropicProvider, FakeProvider, claudeEngine, codexEngine, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
-import type { CredentialStore, ModelProvider, RouteDecision } from '../../../packages/sdk/src/internal.js';
+import { AnthropicProvider, FakeProvider, claudeEngine, loadAgents, codexEngine, FileEventLog, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, GeminiProvider, KimiCodeProvider, MarsError, OpenAICodexProvider, OpenAIProvider, OpenRouterProvider, OllamaProvider, QwenProvider, Workspace, createMars, evidencePath, eventLogPath, loadConfig, refreshCredential, resolveAuthCredential, resolveCredential, routeTask } from '../../../packages/sdk/src/internal.js';
+import type { AgentDefinition, CredentialStore, ModelProvider, RouteDecision } from '../../../packages/sdk/src/internal.js';
 import { ConversationScreen } from './conversation.js';
 import { authContext, authProvider, authenticatedProviders } from './commands/auth.js';
 import { nonNegative, positive, prompt, safe, targetParts } from './utils/common.js';
@@ -79,6 +79,32 @@ export function approval(screen?: ConversationScreen) {
   };
 }
 
+const claudeLogin = () => process.env.MARS_EVAL_CLAUDE_LOGIN === '1';
+
+/** The vendor CLI behind a declared agent. Claude Code runs only with ANTHROPIC_API_KEY outside local evaluation. */
+export function engineForAgent(agent: AgentDefinition) {
+  const tuning = { ...(agent.model ? { model: agent.model } : {}), ...(agent.effort ? { effort: agent.effort } : {}) };
+  return agent.engine === 'claude' ? claudeEngine({ ...tuning, commands: agent.commands, ...(claudeLogin() ? { localLogin: true } : {}) }) : codexEngine(tuning);
+}
+
+async function crossReviewAgents(root: string, values: Record<string, unknown>) {
+  if (values.workflow !== 'cross-review') return undefined;
+  const agents = await loadAgents(root);
+  const pick = (flag: 'implementer' | 'reviewer') => {
+    const name = values[flag];
+    if (typeof name !== 'string') throw new MarsError('ConfigurationError', `--workflow cross-review needs --${flag} AGENT. Available: ${[...agents.keys()].join(', ')}.`);
+    const agent = agents.get(name);
+    if (!agent) throw new MarsError('ConfigurationError', `Unknown agent: ${name}. Available: ${[...agents.keys()].join(', ')}.`);
+    if (agent.engine === 'claude' && !claudeLogin() && !process.env.ANTHROPIC_API_KEY) throw new MarsError('ConfigurationError', `Agent ${name} uses Claude Code, which needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.`);
+    return agent;
+  };
+  const implementer = pick('implementer');
+  const reviewer = pick('reviewer');
+  if (implementer.edit === 'deny') throw new MarsError('ConfigurationError', `Agent ${implementer.name} has edit: deny and cannot implement.`);
+  const agent = (definition: AgentDefinition) => ({ name: definition.name, engine: engineForAgent(definition), instructions: definition.instructions });
+  return { implementer: agent(implementer), reviewer: agent(reviewer), ...(typeof values['review-rounds'] === 'string' ? { rounds: Number(values['review-rounds']) } : {}) };
+}
+
 export async function createSessionMars(target: string, root: string, values: Record<string, unknown>, credentials: CredentialStore, sessionId?: string, screen?: ConversationScreen) {
   const { model } = targetParts(target);
   const provider = await providerForTarget(target, credentials, values);
@@ -87,6 +113,7 @@ export async function createSessionMars(target: string, root: string, values: Re
   const sessionStore = values['no-save'] === true ? undefined : new FileSessionStore(path.join(root, '.mars', 'sessions'));
   const evidenceStore = values['no-save'] === true ? undefined : new FileEvidenceStore(evidencePath(root));
   const eventLog = values['no-save'] === true ? undefined : new FileEventLog(eventLogPath(root));
+  const crossReview = await crossReviewAgents(root, values);
   const roleSelection = await workflowRoleProviders(root, values, credentials, target, provider, loaded.config);
   const options = {
     workspace: root, provider, model, sessionId, sessionStore,
@@ -100,6 +127,7 @@ export async function createSessionMars(target: string, root: string, values: Re
     maxContextChars: loaded.config.limits.maxContextChars,
     protect: loaded.config.contract.protect,
     ...(typeof values.engine === 'string' ? { engine: (values.engine === 'claude' ? claudeEngine : codexEngine)({ ...(typeof values['engine-model'] === 'string' ? { model: values['engine-model'] } : {}), ...(values.engine === 'claude' && process.env.MARS_EVAL_CLAUDE_LOGIN === '1' ? { localLogin: true } : {}) }) } : {}),
+    ...(crossReview ? { crossReview } : {}),
     // Resumed isolated sessions are detected by the SDK from their persisted metadata.
     ...(values.isolate === true ? { isolation: 'worktree' as const } : {}),
     budget: {
