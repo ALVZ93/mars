@@ -80,9 +80,13 @@ test('Kimi Code device login opens the verification URL and polls RFC 8628', asy
 
 test('subscription transports keep provider credentials out of model input and parse tool streams', async () => {
   let anthropicBody;
-  const anthropic = new AnthropicProvider({ provider: 'anthropic', kind: 'oauth', accessToken: 'sk-ant-oat-test' }, { fetch: async (_url, options) => {
+  assert.throws(() => new AnthropicProvider({ provider: 'anthropic', kind: 'oauth', accessToken: 'sk-ant-oat-test' }), { code: 'AuthenticationError' });
+  const anthropic = new AnthropicProvider({ provider: 'anthropic', kind: 'api-key', secret: 'sk-ant-api-test' }, { fetch: async (_url, options) => {
     anthropicBody = JSON.parse(options.body);
-    assert.equal(new Headers(options.headers).get('authorization'), 'Bearer sk-ant-oat-test');
+    const headers = new Headers(options.headers);
+    assert.equal(headers.get('x-api-key'), 'sk-ant-api-test');
+    assert.equal(headers.get('authorization'), null);
+    assert.equal(headers.get('x-app'), null);
     return sse([
       { type: 'message_start', message: { usage: { input_tokens: 1 } } },
       { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
@@ -95,7 +99,7 @@ test('subscription transports keep provider credentials out of model input and p
   const anthropicEvents = await collect(anthropic);
   assert.equal(anthropicEvents.at(-1).message.content, 'ok');
   assert.equal(anthropicBody.messages[0].content, 'hello');
-  assert.ok(!JSON.stringify(anthropicBody).includes('sk-ant-oat-test'));
+  assert.ok(!JSON.stringify(anthropicBody).includes('sk-ant-api-test'));
 
   let threadOptions;
   let prompt;

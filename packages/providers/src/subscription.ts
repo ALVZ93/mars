@@ -96,14 +96,24 @@ export interface AnthropicTransportOptions {
   baseUrl?: string;
   maxTokens?: number;
 }
+/** Lets Kimi Code (an Anthropic-compatible API with its own OAuth) reuse the transport with a bearer token. */
+const KIMI_BEARER = Symbol('kimi-bearer');
+
+/**
+ * Anthropic Messages API. Anthropic accepts only API keys here: claude.ai subscription tokens are not usable by
+ * third-party apps, so MARS never sends them to Anthropic. To use a Claude subscription, run Claude Code itself
+ * (`--engine claude`).
+ */
 export class AnthropicProvider implements ModelProvider {
   readonly id: string = 'anthropic';
   readonly #credential: ApiKeyCredential | OAuthCredential;
   readonly #fetch: FetchLike;
   readonly #url: string;
   readonly #maxTokens: number;
-  constructor(credential: Credential, options: AnthropicTransportOptions = {}) {
-    if (credential.provider !== this.id || (credential.kind !== 'api-key' && credential.kind !== 'oauth')) throw new MarsError('AuthenticationError', 'An Anthropic API key or browser credential is required.');
+  constructor(credential: Credential, options: AnthropicTransportOptions = {}, bearer?: typeof KIMI_BEARER) {
+    if (credential.provider !== 'anthropic' || (credential.kind !== 'api-key' && !(credential.kind === 'oauth' && bearer === KIMI_BEARER))) {
+      throw new MarsError('AuthenticationError', 'Anthropic requires an API key in MARS; Claude subscription credentials are not supported.');
+    }
     this.#credential = credential;
     this.#fetch = options.fetch ?? fetch;
     this.#url = safeEndpoint(endpoint(options.baseUrl ?? 'https://api.anthropic.com', '/v1/messages'));
@@ -193,7 +203,7 @@ export class KimiCodeProvider extends AnthropicProvider {
   readonly id = 'kimi-code';
   constructor(credential: ApiKeyCredential | OAuthCredential, options: KimiCodeProviderOptions = {}) {
     if (credential.provider !== 'kimi-code') throw new MarsError('AuthenticationError', 'A Kimi Code credential is required.');
-    super({ ...credential, provider: 'anthropic' }, { ...options, baseUrl: options.baseUrl ?? 'https://api.kimi.com/coding/v1' });
+    super({ ...credential, provider: 'anthropic' }, { ...options, baseUrl: options.baseUrl ?? 'https://api.kimi.com/coding/v1' }, KIMI_BEARER);
   }
 }
 

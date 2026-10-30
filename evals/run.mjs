@@ -1,6 +1,6 @@
 // Runs the eval corpus in several conditions and records one JSONL row per run.
 //   mars-claude, mars-codex: MARS bugfix with --engine claude|codex doing the work
-//   claude:   Claude Code `claude -p`, edits accepted, shell limited to npm/node, no user settings or MCP
+//   claude:   Claude Code `claude -p --bare` with ANTHROPIC_API_KEY only, edits accepted, shell limited to npm/node
 //   agy:      Antigravity `agy -p` in its sandbox with edits accepted
 //   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
 //   baseline: the same bundled Codex binary, `codex exec` in workspace-write mode, same model and time limit
@@ -86,8 +86,12 @@ ${r.error.message}` : ''}` };
 
 function runClaude(task, work) {
   const started = Date.now();
+  // --bare: Claude Code authenticates only with ANTHROPIC_API_KEY. MARS_EVAL_CLAUDE_LOGIN=1 (developer evaluation
+  // only) lets Claude Code use its own login instead.
+  const localLogin = process.env.MARS_EVAL_CLAUDE_LOGIN === '1';
+  if (!localLogin && !process.env.ANTHROPIC_API_KEY) return { status: 'failed', model: values['claude-model'], requests: 0, tokens: null, tokensKnown: false, seconds: 0, final: '', log: 'ANTHROPIC_API_KEY (or MARS_EVAL_CLAUDE_LOGIN=1 for local evaluation) is required for the claude condition.' };
   // The prompt goes through stdin so it never depends on argument quoting.
-  const r = spawnSync('claude', ['-p', '--output-format', 'json', '--model', values['claude-model'], '--effort', 'low', '--setting-sources', 'project', '--strict-mcp-config', '--disable-slash-commands',
+  const r = spawnSync('claude', ['-p', ...(localLogin ? [] : ['--bare']), '--output-format', 'json', '--model', values['claude-model'], '--effort', 'low', '--setting-sources', 'project', '--strict-mcp-config', '--disable-slash-commands',
     '--no-session-persistence', '--permission-mode', 'acceptEdits', '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm:*)', 'Bash(node:*)'],
     { cwd: work, input: baselinePrompt(task), encoding: 'utf8', windowsHide: true, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
   let result;

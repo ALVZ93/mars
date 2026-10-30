@@ -23,9 +23,20 @@ export interface ClaudeEngineOptions {
   /** Command prefixes the engine may run through its shell, e.g. `npm`, `node`. */
   commands?: readonly string[];
   executable?: string;
+  /** Environment checked for ANTHROPIC_API_KEY (default: process.env). */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Developer-only, for local evaluation: run Claude Code with its own login instead of `--bare` + API key.
+   * Not a product mode; MARS enables it only with MARS_EVAL_CLAUDE_LOGIN=1.
+   */
+  localLogin?: boolean;
 }
 
-/** Claude Code `claude -p`: project settings only (no user plugins, hooks or MCP), edits accepted, shell limited to `commands`. */
+/**
+ * Claude Code `claude -p --bare`, authenticated only with ANTHROPIC_API_KEY. `--bare` never reads the claude.ai
+ * login: Anthropic does not allow third-party tools to run on Claude subscription credentials. It also skips the
+ * user's CLAUDE.md, hooks, plugins and MCP servers. Edits are accepted and the shell is limited to `commands`.
+ */
 export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
   const model = options.model ?? 'sonnet';
   // Low effort by default, like the MARS Codex provider: the proof, not long deliberation, carries the result.
@@ -34,6 +45,7 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
   return {
     id: 'claude-code', model,
     session(cwd) {
+      if (!options.localLogin && !(options.env ?? process.env).ANTHROPIC_API_KEY) throw new Error('--engine claude needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.');
       const id = randomUUID();
       let started = false;
       return {
@@ -41,7 +53,7 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
           const usage = { inputTokens: 0, outputTokens: 0 };
           // The model sometimes ends a turn in plain text without calling StructuredOutput; ask again in the same session.
           for (let attempt = 0; ; attempt++) {
-            const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort,
+            const args = ['-p', ...(options.localLogin ? [] : ['--bare']), '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort,
               '--setting-sources', 'project', '--strict-mcp-config', '--disable-slash-commands', '--permission-mode', 'acceptEdits',
               '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', ...commands.map(command => `Bash(${command}:*)`),
               '--json-schema', JSON.stringify(schema), ...(started ? ['--resume', id] : ['--session-id', id])];

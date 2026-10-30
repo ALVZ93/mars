@@ -22,7 +22,7 @@ mars run "La página 1 muestra los elementos de la página 2" --workflow bugfix 
 ```
 
 - **Prueba de arreglo.** El agente escribe un test que reproduce el bug. MARS exige que falle antes del arreglo, que el fallo venga de ese test y que pase después. El test queda protegido para que no se pueda «arreglar» debilitándolo.
-- **Con la CLI que ya usas.** `--engine claude` o `--engine codex` deja que Claude Code o Codex escriban el test y el arreglo; MARS sigue exigiendo y comprobando la prueba.
+- **Con la CLI que ya usas.** `--engine claude` o `--engine codex` deja que Claude Code o Codex escriban el test y el arreglo; MARS sigue exigiendo y comprobando la prueba. Claude Code se usa solo con `ANTHROPIC_API_KEY`, nunca con el login de una suscripción de Claude.
 - **Tu árbol intacto.** `--isolate` trabaja en una copia aparte. `mars runs diff|apply|discard` deciden qué llega a tu proyecto.
 - **Presupuesto** de tiempo, peticiones y tokens para toda la tarea.
 - **Recibo Markdown** listo para un PR, sin texto del modelo y con las credenciales redactadas.

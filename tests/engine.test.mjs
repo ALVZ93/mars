@@ -114,3 +114,13 @@ test('engines are only for workflows with a reproduction phase', async t => {
   const instance = await mars(t, root, fakeEngine([]));
   await assert.rejects(instance.runWorkflow('feature', 'add a feature'), /--engine requires a workflow with a reproduction phase/);
 });
+
+test('the Claude engine never runs without an Anthropic API key', async () => {
+  const { claudeEngine } = await import('../dist/packages/sdk/src/index.js');
+  assert.throws(() => claudeEngine({ env: {} }).session(process.cwd()), /ANTHROPIC_API_KEY/);
+});
+
+test('local Claude login is opt-in for developer evaluation only', async () => {
+  const { claudeEngine } = await import('../dist/packages/sdk/src/index.js');
+  assert.doesNotThrow(() => claudeEngine({ env: {}, localLogin: true }).session(process.cwd()));
+});

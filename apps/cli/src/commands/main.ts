@@ -31,6 +31,8 @@ export async function main(): Promise<void> {
   if (values['repair-attempts'] !== undefined && typeof values.workflow !== 'string') throw new MarsError('ConfigurationError', '--repair-attempts requires --workflow.');
   if (values.engine !== undefined && !['claude', 'codex'].includes(String(values.engine))) throw new MarsError('ConfigurationError', '--engine must be claude or codex.');
   if (values.engine !== undefined && typeof values.workflow !== 'string') throw new MarsError('ConfigurationError', '--engine requires --workflow bugfix.');
+  if (values.engine === 'claude' && process.env.MARS_EVAL_CLAUDE_LOGIN === '1') process.stderr.write('[engine] MARS_EVAL_CLAUDE_LOGIN=1: Claude Code runs with its own login. Developer evaluation only; not a supported product mode.\n');
+  else if (values.engine === 'claude' && !process.env.ANTHROPIC_API_KEY) throw new MarsError('ConfigurationError', '--engine claude needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.');
   if (values['engine-model'] !== undefined && values.engine === undefined) throw new MarsError('ConfigurationError', '--engine-model requires --engine.');
   if (command === 'run' && !positionals.slice(1).join(' ').trim()) throw new MarsError('ConfigurationError', 'Provide a task to run.');
   if (command === 'doctor') { await doctorCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.sandbox); return; }

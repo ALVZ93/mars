@@ -33,4 +33,6 @@ A run is **correct** when the hidden tests and the project checks both pass on t
 
 Each task: `task.json` (report given to the agent, hidden test command, project checks, scope), `repo/` (initial project), `hidden/` (never shown to the agent), `reference/` (a correct solution, `fix` only).
 
+**Claude in evals.** MARS runs Claude Code only with an Anthropic API key (`claude --bare`), as the product does. For a developer's own local measurements, `MARS_EVAL_CLAUDE_LOGIN=1` lets the `claude` and `mars-claude` conditions use the Claude Code login of the person running them instead. This is personal use of Claude Code for evaluation, not a product mode: MARS never offers a Claude subscription login to its users.
+
 Running models against the corpus (`mars bench`, MARS vs baseline) is phase D. Evals consume real quota and are not part of `pnpm test`.
