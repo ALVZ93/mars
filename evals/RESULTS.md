@@ -1,5 +1,29 @@
 # Eval results
 
+## 2026-10-30 — harder corpus: MARS with each engine
+
+Same 8 tasks, 2 runs each. MARS + Claude ran with the developer's own Claude Code login (`MARS_EVAL_CLAUDE_LOGIN=1`, evaluation only; the product runs Claude Code only with an API key). Rows: `results/2026-10-30T10-55-28-469Z.jsonl` (MARS + Codex, first prompts), `results/2026-10-30T11-26-59-225Z.jsonl` (MARS + Codex, contract prompts), `results/2026-10-30T11-27-02-422Z.jsonl` (MARS + Claude, contract prompts).
+
+| Task | Codex alone | MARS + Codex, first prompts | MARS + Codex, contract prompts | Claude alone | MARS + Claude, contract prompts |
+| --- | --- | --- | --- | --- | --- |
+| `money-half-away` | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 |
+| `glob-doublestar` | 0/2 | 0/2 | 2/2 | 0/2 | 0/2 |
+| `debounce-leading` | 1/2 | 1/2 | 2/2 | 0/2 | 0/2 |
+| `query-repeated-keys` | 2/2 | 0/2 | 2/2 | 2/2 | 2/2 |
+| `pool-order` | 0/2 | 0/2 | 2/2 | 0/2 | 0/2 |
+| `wrap-graphemes` | 1/2 | 1/2 | 2/2 | 0/2 | 2/2 |
+| `monthly-month-end` | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 |
+| `stale-profile-cache` | 2/2 | 2/2 | 2/2 | 0/2 | 2/2 |
+| **Correct** | **10/16** | **8/16** | **16/16** | **4/16** | **10/16** |
+| Median time | ~42 s | ~84 s | ~90 s | ~38 s | ~65 s |
+
+- **The first MARS prompts made the fix narrower than the CLI alone (8/16 vs 10/16).** The protected test became the ceiling: "implement the smallest correct fix" plus a test of the reported rule meant the engine passed that test and left the rest of the documented contract broken. `codex exec` alone, told only to fix the bug, read the whole doc comment and fixed more.
+- **Contract prompts:** the reproduction must cover every documented rule the code breaks, and the fix must meet the documented contract ("the test is the minimum, not the goal"). Applied to both bugfix paths (engine and MARS's own phases). Result: MARS + Codex 16/16, MARS + Claude 10/16. Every remaining MARS + Claude failure is a `scope` false proof (rules its test did not cover); none is `reported`.
+- **Caveats — this is not yet a fair win:**
+  - The vendor CLIs ran with the original baseline prompt, which does not ask them to honour the documented contract. Part of the gain may come from that instruction alone, not from MARS's structure (protected test, red → green, proof). Next run: the CLIs alone with the same contract instruction.
+  - The contract prompts were written after seeing failures on these same tasks. They state a general rule, but held-out tasks are needed to rule out overfitting.
+  - MARS is ~2× slower than either CLI alone.
+
 ## 2026-10-30 — harder corpus: 8 new tasks, vendor CLIs alone
 
 Each new task documents its contract in the module (doc comment) and reports only one symptom of it; the hidden tests check the documented contract. Claude Code (`claude -p`, Sonnet 4.6, low effort) and `codex exec` (`gpt-5.6-sol`, low effort), 2 runs each. Rows: `results/2026-10-30T10-42-50-342Z.jsonl` (both conditions).
