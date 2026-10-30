@@ -1,5 +1,30 @@
 # Eval results
 
+## 2026-10-30 — harder corpus: cross-review (one engine implements, the other reviews)
+
+`--workflow cross-review` (ADR 010): the implementer gets the contract instruction, MARS runs the checks, the reviewer reads the diff read-only and its findings go back to the implementer for one correction round; findings still open after it make the verdict *Review findings open*. Same 8 tasks, 2 runs each; Claude with the developer's own login (`MARS_EVAL_CLAUDE_LOGIN=1`). Rows: `results/2026-10-30T18-25-22-152Z.jsonl` (Codex implements, Claude reviews), `results/2026-10-30T18-25-22-218Z.jsonl` (Claude implements, Codex reviews).
+
+| Task | Codex alone | Codex → Claude review | Claude alone | Claude → Codex review |
+| --- | --- | --- | --- | --- |
+| `money-half-away` | 2/2 | 2/2 | 2/2 | 1/2 |
+| `glob-doublestar` | 2/2 | 2/2 | 0/2 | **2/2** |
+| `debounce-leading` | 2/2 | 2/2 | 0/2 | **1/2** |
+| `query-repeated-keys` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `pool-order` | 2/2 | 2/2 | 0/2 | 0/2 |
+| `wrap-graphemes` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `monthly-month-end` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `stale-profile-cache` | 2/2 | 2/2 | 0/2 | **2/2** |
+| **Correct** | **16/16** | **16/16** | **8/16** | **12/16** |
+| Wrong but claimed done | 0 | 0 | 8 | **2** |
+| Median time | ~48 s | ~92 s | ~41 s | ~121 s |
+
+(*Alone* = the CLI with `--prompt contract`, from the fair comparison below.)
+
+- **Codex reviewing Claude: 8 → 12 correct, and wrong-but-claimed 8 → 2.** Codex found real problems in 12 of 16 Claude diffs (`glob`: 4 findings in each first round). Of the 5 runs that ended with findings open, 2 were really wrong (the flag was right) and 3 passed the hidden tests (findings beyond them, or false alarms: a human looks at those).
+- **Claude reviewing Codex adds nothing on this corpus:** Codex was already 16/16. Claude approved 14 of 16 diffs on the first round and caught one real issue in `pool-order` (twice). It costs ~2× the time.
+- **`pool-order` is missed by both Claude paths:** Codex approved Claude's fix without noticing the "no new tasks after a rejection" rule.
+- **Reading:** the combination helps the weaker implementer a lot and the stronger one not at all, on 8 tasks where Codex alone is at the ceiling. Next: a corpus where Codex alone is not at 16/16, and held-out tasks, before claiming that cross-review beats the best engine alone. Cost: two engines and ~2–3× the time per task.
+
 ## 2026-10-30 — harder corpus: fair comparison (CLIs alone with the contract instruction)
 
 The vendor CLIs alone, re-run with `--prompt contract`: the same documented-contract instruction MARS's bugfix prompts got ("every documented rule the current code breaks is part of the bug… the test is the minimum, not the goal"). Same 8 tasks, 2 runs each. Claude ran with the developer's own login (`MARS_EVAL_CLAUDE_LOGIN=1`). Rows: `results/2026-10-30T13-03-43-599Z.jsonl` (Claude), `results/2026-10-30T13-03-43-606Z.jsonl` (Codex).
