@@ -1,5 +1,27 @@
 # Eval results
 
+## 2026-10-30 — harder corpus: fair comparison (CLIs alone with the contract instruction)
+
+The vendor CLIs alone, re-run with `--prompt contract`: the same documented-contract instruction MARS's bugfix prompts got ("every documented rule the current code breaks is part of the bug… the test is the minimum, not the goal"). Same 8 tasks, 2 runs each. Claude ran with the developer's own login (`MARS_EVAL_CLAUDE_LOGIN=1`). Rows: `results/2026-10-30T13-03-43-599Z.jsonl` (Claude), `results/2026-10-30T13-03-43-606Z.jsonl` (Codex).
+
+| Task | Codex alone, contract | MARS + Codex, contract | Claude alone, contract | MARS + Claude, contract |
+| --- | --- | --- | --- | --- |
+| `money-half-away` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `glob-doublestar` | 2/2 | 2/2 | 0/2 | 0/2 |
+| `debounce-leading` | 2/2 | 2/2 | 0/2 | 0/2 |
+| `query-repeated-keys` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `pool-order` | 2/2 | 2/2 | 0/2 | 0/2 |
+| `wrap-graphemes` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `monthly-month-end` | 2/2 | 2/2 | 2/2 | 2/2 |
+| `stale-profile-cache` | 2/2 | 2/2 | 0/2 | 2/2 |
+| **Correct** | **16/16** | **16/16** | **8/16** | **10/16** |
+| Median time | ~48 s | ~90 s | ~41 s | ~65 s |
+
+- **Most of the earlier gain was the instruction, not MARS's structure.** Codex alone with the contract sentence reaches 16/16 in about half MARS's time. Claude alone goes from 4/16 to 8/16.
+- **MARS's structure adds +2/16 with Claude, nothing with Codex.** The only task MARS + Claude wins is `stale-profile-cache` (the misleading report): reproducing first made it find the cache bug in `store.js` instead of patching `format.js`.
+- **MARS did not stop false claims here.** Every wrong Claude run, alone or under MARS, ended in a claim of success. Under MARS the claim is "Fixed and proven", with a receipt that names the covered cases, so the gap is visible; but the verdict is still wrong on `glob`, `debounce` and `pool` (`scope` false proofs).
+- **Conclusion:** on this corpus MARS does not beat Codex and beats Claude only narrowly, at ~1.5–2× the time. The contract instruction belongs in every baseline from now on. Where MARS must win is in what a single prompt cannot do: catching uncovered rules (a verifier or second attempt checking the contract against the test), not in the wording of the request.
+
 ## 2026-10-30 — harder corpus: MARS with each engine
 
 Same 8 tasks, 2 runs each. MARS + Claude ran with the developer's own Claude Code login (`MARS_EVAL_CLAUDE_LOGIN=1`, evaluation only; the product runs Claude Code only with an API key). Rows: `results/2026-10-30T10-55-28-469Z.jsonl` (MARS + Codex, first prompts), `results/2026-10-30T11-26-59-225Z.jsonl` (MARS + Codex, contract prompts), `results/2026-10-30T11-27-02-422Z.jsonl` (MARS + Claude, contract prompts).

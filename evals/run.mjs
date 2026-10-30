@@ -7,7 +7,8 @@
 // Then the hidden acceptance tests run on the resulting tree. Consumes real model quota.
 // A false proof is split by the hidden tests it fails: `reported` (the reported example itself, so the proof was wrong)
 // or `scope` (other cases of the contract, outside what the reproduction covered); `checks` when the project checks fail.
-// Usage: node evals/run.mjs [--model openai-codex:gpt-5.6-sol] [--conditions mars,baseline,claude,agy] [--claude-model sonnet] [--agy-model gemini-4-argon-low] [task-id ...]
+// --prompt contract gives the vendor CLIs the same documented-contract instruction as MARS's bugfix prompts.
+// Usage: node evals/run.mjs [--model openai-codex:gpt-5.6-sol] [--conditions mars,baseline,claude,agy] [--prompt plain|contract] [--claude-model sonnet] [--agy-model gemini-4-argon-low] [task-id ...]
 import { spawnSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,7 +20,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.join(here, '..', 'dist', 'apps', 'cli', 'src', 'index.js');
 const { findCodexBinary } = await import(new URL('../dist/packages/providers/src/codex-runner.js', import.meta.url).href);
 const { receiptVerdict } = await import(new URL('../dist/packages/sdk/src/receipt.js', import.meta.url).href);
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { model: { type: 'string', default: 'openai-codex:gpt-5.6-sol' }, conditions: { type: 'string', default: 'mars,baseline' }, timeout: { type: 'string', default: '900000' }, 'claude-model': { type: 'string', default: 'sonnet' }, 'agy-model': { type: 'string', default: 'gemini-4-argon-low' } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { model: { type: 'string', default: 'openai-codex:gpt-5.6-sol' }, conditions: { type: 'string', default: 'mars,baseline' }, timeout: { type: 'string', default: '900000' }, 'claude-model': { type: 'string', default: 'sonnet' }, 'agy-model': { type: 'string', default: 'gemini-4-argon-low' }, prompt: { type: 'string', default: 'plain' } } });
+if (!['plain', 'contract'].includes(values.prompt)) throw new Error('--prompt must be plain or contract');
 const timeoutMs = Number(values.timeout);
 const [, codexModel] = values.model.split(':');
 
@@ -61,7 +63,8 @@ async function finishMars(work, run) {
 }
 
 // Same instructions for every vendor CLI.
-const baselinePrompt = task => `${task.report}\n\nArregla el bug en este repositorio y añade o actualiza un test que lo cubra. Ejecuta los tests del proyecto (${task.checks.join(', ')}) antes de terminar. Si no puedes reproducir el problema, no cambies el código y explica por qué.`;
+const contract = 'Lee la documentación y los comentarios del código implicado: cada regla documentada que el código actual incumple forma parte del bug, aunque el informe muestre un solo síntoma. Arregla el código para que cumpla su contrato documentado; el test es el mínimo, no el objetivo. ';
+const baselinePrompt = task => `${task.report}\n\n${values.prompt === 'contract' ? contract : ''}Arregla el bug en este repositorio y añade o actualiza un test que lo cubra. Ejecuta los tests del proyecto (${task.checks.join(', ')}) antes de terminar. Si no puedes reproducir el problema, no cambies el código y explica por qué.`;
 
 function runBaseline(task, work) {
   const { executable, pathDirs } = findCodexBinary();
@@ -156,7 +159,7 @@ for (const id of ids) {
       await writeFile(path.join(artifacts, 'hidden.log'), hiddenOutput);
       // A "claim" for the baseline is changing source code; for MARS it is the Fixed and proven verdict.
       const claimed = isMars ? result.claimed : outcome.sourceChanged.length > 0;
-      row = { task: id, kind: task.kind, condition, model: values.model, ...summary, ...outcome, claimed,
+      row = { task: id, kind: task.kind, condition, model: values.model, ...(isMars ? {} : { prompt: values.prompt }), ...summary, ...outcome, claimed,
         falseProof: isMars ? result.claimed && !outcome.correct : null,
         falseProofKind: isMars && result.claimed && !outcome.correct ? (!outcome.checksPass ? 'checks' : outcome.hiddenFailed.some(name => task.reportedTests?.includes(name)) ? 'reported' : 'scope') : null,
         trapViolated: task.kind === 'trap' ? claimed || !outcome.hiddenPass : null, at: new Date().toISOString() };
