@@ -20,8 +20,8 @@
 
 (*Alone* = the CLI with `--prompt contract`, from the fair comparison below.)
 
-- **Codex reviewing Claude: 8 → 12 correct, and wrong-but-claimed 8 → 2.** Codex found real problems in 12 of 16 Claude diffs (`glob`: 4 findings in each first round). Of the 5 runs that ended with findings open, 2 were really wrong (the flag was right) and 3 passed the hidden tests (findings beyond them, or false alarms: a human looks at those).
-- **Claude reviewing Codex adds nothing on this corpus:** Codex was already 16/16. Claude approved 14 of 16 diffs on the first round and caught one real issue in `pool-order` (twice). It costs ~2× the time.
+- **Codex reviewing Claude: 8 → 12 correct, and wrong-but-claimed 8 → 2.** Codex reported findings on 11 of 16 Claude diffs in the first round (`glob`: 4 findings in each first round). Of the 5 runs that ended with findings open, 2 were really wrong (the flag was right) and 3 passed the hidden tests (findings beyond them, or false alarms: a human looks at those).
+- **Claude reviewing Codex adds nothing on this corpus:** Codex was already 16/16. Claude approved 14 of 16 diffs on the first round; its 2 findings were in `pool-order`. It costs ~2× the time.
 - **`pool-order` is missed by both Claude paths:** Codex approved Claude's fix without noticing the "no new tasks after a rejection" rule.
 - **Reading:** the combination helps the weaker implementer a lot and the stronger one not at all, on 8 tasks where Codex alone is at the ceiling. Next: a corpus where Codex alone is not at 16/16, and held-out tasks, before claiming that cross-review beats the best engine alone. Cost: two engines and ~2–3× the time per task.
 
