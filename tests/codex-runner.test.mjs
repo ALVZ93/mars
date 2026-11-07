@@ -46,7 +46,7 @@ async function fakeCli(t, scenario) {
 
 test('runs without the user config, parses the turn and resumes the same thread', async t => {
   const { dir, thread } = await fakeCli(t, 'ok');
-  assert.deepEqual(await thread.run('first', { outputSchema: schema, signal: new AbortController().signal }), { finalResponse: '{"answer":"ok"}', usage: { input_tokens: 10, output_tokens: 2 } });
+  assert.deepEqual(await thread.run('first', { outputSchema: schema, signal: new AbortController().signal }), { finalResponse: '{"answer":"ok"}', usage: { input_tokens: 10, output_tokens: 2 }, commands: [] });
   await thread.run('second', { outputSchema: schema, signal: new AbortController().signal });
   const [first, second] = (await readFile(path.join(dir, 'args.log'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   // argv[1] is the `exec` subcommand itself (the fake script); the flags follow it.

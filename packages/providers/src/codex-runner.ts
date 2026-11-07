@@ -28,7 +28,12 @@ export interface CodexThreadOptions {
   /** `0` stops Codex from loading AGENTS.md itself (MARS passes the project map in the prompt). */
   projectDocMaxBytes?: number;
 }
-export interface CodexTurnResult { finalResponse: string; usage: { input_tokens: number; output_tokens: number } | null }
+export interface CodexTurnResult {
+  finalResponse: string;
+  usage: { input_tokens: number; output_tokens: number } | null;
+  /** Command lines the agent ran, as Codex reports them (wrapped in its shell). */
+  commands?: string[];
+}
 
 const PACKAGES: Record<string, [string, string]> = {
   'linux-x64': ['@openai/codex-linux-x64', 'x86_64-unknown-linux-musl'],
@@ -120,6 +125,7 @@ export class CodexCliRunner {
       const child = spawn(executable, args, { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
       const closed = new Promise<number | null>(done => child.once('close', code => done(code)));
       let finalResponse = '';
+      const commands: string[] = [];
       let usage: CodexTurnResult['usage'] = null;
       let completed = false;
       let failure: string | undefined;
@@ -132,7 +138,7 @@ export class CodexCliRunner {
         if (settled) return;
         settled = true;
         signal.removeEventListener('abort', abort);
-        if (error) reject(error); else resolve({ finalResponse, usage });
+        if (error) reject(error); else resolve({ finalResponse, usage, commands });
       };
       // Settles only after the process tree is gone, so callers never clean up under a live Codex.
       const abort = () => { cancelled = true; void terminate(child, closed).then(() => finish(new Error('Codex turn cancelled.'))); };
@@ -142,10 +148,11 @@ export class CodexCliRunner {
       child.stderr!.setEncoding('utf8').on('data', chunk => { stderr = (stderr + chunk).slice(-8_000); });
       createInterface({ input: child.stdout!, crlfDelay: Infinity }).on('line', line => {
         if (!line.trim()) return;
-        let event: { type?: string; thread_id?: string; item?: { type?: string; text?: string }; usage?: { input_tokens: number; output_tokens: number }; error?: { message?: string } };
+        let event: { type?: string; thread_id?: string; item?: { type?: string; text?: string; command?: string }; usage?: { input_tokens: number; output_tokens: number }; error?: { message?: string } };
         try { event = JSON.parse(line); } catch { invalid = true; return; }
         if (event.type === 'thread.started' && event.thread_id) onThread(event.thread_id);
         else if (event.type === 'item.completed' && event.item?.type === 'agent_message') finalResponse = event.item.text ?? '';
+        else if (event.type === 'item.completed' && event.item?.type === 'command_execution' && typeof event.item.command === 'string') commands.push(event.item.command);
         else if (event.type === 'turn.completed') { completed = true; if (event.usage) usage = { input_tokens: event.usage.input_tokens, output_tokens: event.usage.output_tokens }; }
         else if (event.type === 'turn.failed') failure = event.error?.message ?? 'Codex turn failed.';
       });

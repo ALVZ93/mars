@@ -37,6 +37,8 @@ export interface RunReport {
   /** Cross-review: which agent implemented and which reviewed, and every review round. */
   agents?: { implementer: string; reviewer: string };
   reviews?: Array<{ round: number; agent: string; verdict: 'approve' | 'changes'; findings: ReviewFinding[] }>;
+  /** Shell commands vendor agent CLIs ran, as they reported them (audit trail, ADR 012). */
+  commands?: Array<{ agent: string; command: string }>;
   /** Isolated runs only: the agent's diff is exactly base..result. */
   isolation?: { id: string; base: string; result: string; files: string[] };
 }
@@ -91,6 +93,7 @@ export class RunReports {
   contract(value: NonNullable<RunReport['contract']>): void { if (this.#current) this.#current.contract = structuredClone(value); }
   repair(): void { if (this.#current) this.#current.repairAttempts++; }
   agents(value: NonNullable<RunReport['agents']>): void { if (this.#current) this.#current.agents = { ...value }; }
+  command(value: { agent: string; command: string }): void { if (this.#current) (this.#current.commands ??= []).push({ ...value, command: value.command.slice(0, 2_000) }); }
   review(value: NonNullable<RunReport['reviews']>[number]): void { if (this.#current) (this.#current.reviews ??= []).push(structuredClone(value)); }
   finish(status: RunReport['status'], error?: ErrorCode): void {
     if (!this.#current) return;

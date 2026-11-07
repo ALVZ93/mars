@@ -91,6 +91,15 @@ export function renderReceipt(reports: readonly RunReport[], options: { title?: 
       }
       lines.push('', '_Findings are the reviewing model\'s opinion, not checks; the checks below were executed by MARS._', '');
     }
+    if (report.commands?.length) {
+      lines.push('### Commands run by agents', '');
+      const byAgent = new Map<string, number>();
+      for (const item of report.commands) byAgent.set(item.agent, (byAgent.get(item.agent) ?? 0) + 1);
+      lines.push([...byAgent].map(([agent, count]) => `${c(agent)}: ${count}`).join(' · '), '', '<details><summary>Command lines</summary>', '');
+      for (const item of report.commands.slice(0, 40)) lines.push(`- ${c(item.agent)} ${c(item.command)}`);
+      if (report.commands.length > 40) lines.push(`- … ${report.commands.length - 40} more in the JSON report`);
+      lines.push('', '</details>', '');
+    }
     if (report.contract) {
       const { files, modified } = report.contract;
       lines.push('### Contract', '');

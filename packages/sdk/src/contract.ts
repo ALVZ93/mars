@@ -246,3 +246,31 @@ export function reviewOutput(output: unknown): { verdict: 'approve' | 'changes';
   }).filter(finding => finding.problem.trim());
   return { verdict: value.verdict === 'changes' && findings.length ? 'changes' : 'approve', findings };
 }
+
+/**
+ * The command line inside an engine's shell wrapper: Codex reports `"…powershell.exe" -Command 'npm test'` or
+ * `/bin/bash -lc 'npm test'`. Anything else is returned unchanged.
+ */
+export function unwrapShell(raw: string): string {
+  const match = raw.match(/^\s*"?[^"\s]*?(?:powershell|pwsh|bash|zsh|sh)(?:\.exe)?"?\s+(?:-NoLogo\s+|-NoProfile\s+|-NonInteractive\s+)*(?:-lc|-c|-Command)\s+([\s\S]+?)\s*$/i);
+  if (!match) return raw.trim();
+  const inner = match[1]!;
+  // Bash escapes a quote as '\'' and PowerShell as ''.
+  if (/^'[\s\S]*'$/.test(inner)) return inner.slice(1, -1).replaceAll("'\\''", "'").replaceAll("''", "'");
+  if (/^"[\s\S]*"$/.test(inner)) return inner.slice(1, -1).replaceAll('\\"', '"');
+  return inner;
+}
+
+/**
+ * The denied prefix a command line starts with, checking each part of a `&&`, `||`, `;` or `|` chain. A safety net
+ * for audits, not a shell parser: nested `sh -c "…"` strings are not inspected (ADR 012).
+ */
+export function deniedCommand(raw: string, prefixes: readonly string[]): string | undefined {
+  if (!prefixes.length) return undefined;
+  for (const part of unwrapShell(raw).split(/&&|\|\||;|\|/)) {
+    const words = part.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '').replace(/\s+/g, ' ');
+    const hit = prefixes.find(prefix => words === prefix || words.startsWith(`${prefix} `));
+    if (hit) return hit;
+  }
+  return undefined;
+}

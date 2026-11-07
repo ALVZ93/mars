@@ -34,7 +34,8 @@ export interface MarsConfig {
   /** Optional limits shared by every phase of one operation; absent means unlimited. */
   budget: { maxDurationMs?: number; maxModelRequests?: number; maxTokens?: number };
   /** Workspace-relative globs that workflows must not change. */
-  contract: { protect: string[] };
+  /** `protect`: globs no change may touch; `denyCommands`: command prefixes no engine may run (ADR 012). */
+  contract: { protect: string[]; denyCommands: string[] };
   mcp: { servers: McpServerConfig[] };
   knowledge: { enabled: boolean };
 }
@@ -75,7 +76,7 @@ export const DEFAULT_CONFIG: MarsConfig = {
   limits: { maxTurns: 24, maxToolCalls: 64, timeoutMs: 120_000, maxContextChars: 200_000, maxRetries: 0, retryDelayMs: 500, requestTimeoutMs: 120_000 },
   verification: { commands: [], maxRepairAttempts: 0 },
   budget: {},
-  contract: { protect: [] },
+  contract: { protect: [], denyCommands: [] },
   mcp: { servers: [] },
   knowledge: { enabled: true },
 };
@@ -117,9 +118,17 @@ function parseConfig(value: unknown): ConfigPatch {
   const contract = source.contract;
   const result: ConfigPatch = { version: 1 };
   if (contract !== undefined) {
-    const protect = contract && typeof contract === 'object' && !Array.isArray(contract) ? (contract as Record<string, unknown>).protect : undefined;
-    if (!Array.isArray(protect) || protect.length > 64 || protect.some(item => typeof item !== 'string' || !item.trim() || item.length > 512 || item.includes('..') || /^([\\/]|[A-Za-z]:)/.test(item))) throw new MarsError('ConfigurationError', 'Config contract.protect must be up to 64 workspace-relative globs.');
-    result.contract = { protect: (protect as string[]).map(item => item.trim()) };
+    if (!contract || typeof contract !== 'object' || Array.isArray(contract)) throw new MarsError('ConfigurationError', 'Config contract must be an object.');
+    const { protect, denyCommands } = contract as Record<string, unknown>;
+    result.contract = {};
+    if (protect !== undefined) {
+      if (!Array.isArray(protect) || protect.length > 64 || protect.some(item => typeof item !== 'string' || !item.trim() || item.length > 512 || item.includes('..') || /^([\\/]|[A-Za-z]:)/.test(item))) throw new MarsError('ConfigurationError', 'Config contract.protect must be up to 64 workspace-relative globs.');
+      result.contract.protect = (protect as string[]).map(item => item.trim());
+    }
+    if (denyCommands !== undefined) {
+      if (!Array.isArray(denyCommands) || denyCommands.length > 64 || denyCommands.some(item => typeof item !== 'string' || !item.trim() || item.length > 200 || /[\r\n():]/.test(item))) throw new MarsError('ConfigurationError', 'Config contract.denyCommands must be up to 64 command prefixes (no newlines, parentheses or colons).');
+      result.contract.denyCommands = (denyCommands as string[]).map(item => item.trim().replace(/\s+/g, ' '));
+    }
   }
   if (budget !== undefined) {
     if (!budget || typeof budget !== 'object' || Array.isArray(budget)) throw new MarsError('ConfigurationError', 'Config budget must be an object.');
@@ -212,7 +221,7 @@ export function mergeConfig(...configs: Array<ConfigPatch | undefined>): MarsCon
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
     if (config.budget) result.budget = { ...result.budget, ...config.budget };
-    if (config.contract?.protect) result.contract = { protect: [...config.contract.protect] };
+    if (config.contract) result.contract = { ...result.contract, ...(config.contract.protect ? { protect: [...config.contract.protect] } : {}), ...(config.contract.denyCommands ? { denyCommands: [...config.contract.denyCommands] } : {}) } as MarsConfig['contract'];
     if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }
@@ -229,7 +238,7 @@ function mergePatch(...configs: Array<ConfigPatch | undefined>): ConfigPatch {
     if (config.permissions) result.permissions = { ...result.permissions, ...config.permissions };
     if (config.limits) result.limits = { ...result.limits, ...config.limits };
     if (config.budget) result.budget = { ...result.budget, ...config.budget };
-    if (config.contract?.protect) result.contract = { protect: [...config.contract.protect] };
+    if (config.contract) result.contract = { ...result.contract, ...(config.contract.protect ? { protect: [...config.contract.protect] } : {}), ...(config.contract.denyCommands ? { denyCommands: [...config.contract.denyCommands] } : {}) } as MarsConfig['contract'];
     if (config.verification) result.verification = { ...result.verification, ...config.verification, ...(config.verification.commands ? { commands: [...config.verification.commands] } : {}) };
     if (config.mcp?.servers) result.mcp = { servers: config.mcp.servers.map(server => structuredClone(server)) };
   }

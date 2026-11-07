@@ -10,7 +10,7 @@ import { RunReports } from './reports.js';
 import type { RunReport } from './reports.js';
 import { captureVerifiedProcedure, memoryProposalTool } from './learning.js';
 import { TaskBudget, validateBudget } from './budget.js';
-import { ENGINE_DECLARATION_SCHEMA, REVIEW_SCHEMA, TaskContract, commandFiles, engineDeclaration, isTestPath, outdatedTestTool, outputShape, reproductionTool, reviewOutput, runsInlineCode, samePath, snapshotTree, unrelatedFailure } from './contract.js';
+import { ENGINE_DECLARATION_SCHEMA, REVIEW_SCHEMA, TaskContract, commandFiles, engineDeclaration, isTestPath, outdatedTestTool, outputShape, deniedCommand, reproductionTool, reviewOutput, unwrapShell, runsInlineCode, samePath, snapshotTree, unrelatedFailure } from './contract.js';
 import type { AgentEngine } from '../../providers/src/engines.js';
 import type { OutdatedTestDeclaration, ReproductionDeclaration } from './contract.js';
 import type { TaskBudgetLimits } from './budget.js';
@@ -89,6 +89,8 @@ export interface MarsOptions {
    */
   engine?: AgentEngine;
   /** `cross-review` workflow (ADR 010): one agent implements, a read-only agent of another engine reviews. */
+  /** Command prefixes no engine may run (ADR 012): refused by Claude Code, audited by MARS for every engine. */
+  denyCommands?: readonly string[];
   crossReview?: { implementer: EngineAgent; reviewer: EngineAgent; /** Correction rounds after a review with findings; default 1. */ rounds?: number };
 }
 /** A vendor agent CLI with the name and extra instructions it was declared with. */
@@ -510,7 +512,10 @@ export async function createMars(options: MarsOptions) {
           const withMap = (prompt: string) => projectMap ? `Project instructions (from the repository; follow them unless they conflict with this task's rules):\n\n${projectMap}\n\n---\n${prompt}` : prompt;
           let turns = 0;
           /** One structured turn of a vendor agent CLI session, reported like a model request. */
-          const engineTurns = (engine: AgentEngine, session: ReturnType<AgentEngine['session']>) => async (prompt: string, schema: Record<string, unknown>) => {
+          const denyCommands = options.denyCommands ?? [];
+          /** A session with the project's policy: Claude Code refuses it up front; MARS audits every engine after each turn. */
+          const openSession = (engine: AgentEngine, readOnly = false) => engine.session(workspace.root, { ...(readOnly ? { readOnly } : {}), protect: options.protect ?? [], denyCommands });
+          const engineTurns = (engine: AgentEngine, session: ReturnType<AgentEngine['session']>, agent = engine.id) => async (prompt: string, schema: Record<string, unknown>) => {
             checkAbort(workflowSignal);
             turns++;
             emitEvent({ type: 'model:request', turn: turns, provider: engine.id, model: engine.model, messageCount: turns, toolCount: 0 });
@@ -523,6 +528,12 @@ export async function createMars(options: MarsOptions) {
             }
             if (result.usage) emitEvent({ type: 'model:usage', provider: engine.id, ...result.usage });
             emitEvent({ type: 'model:response', turn: turns, provider: engine.id, toolCount: 0, contentChars: JSON.stringify(result.output ?? null).length });
+            for (const raw of result.commands ?? []) {
+              const command = unwrapShell(raw);
+              reports.command({ agent, command });
+              const prefix = deniedCommand(raw, denyCommands);
+              if (prefix) throw new MarsError('ToolExecutionError', `Policy violated: ${agent} ran \`${command.slice(0, 200)}\` (contract.denyCommands: ${prefix}).`);
+            }
             return result.output;
           };
           const SUMMARY = { type: 'object', additionalProperties: false, required: ['summary'], properties: { summary: { type: 'string', description: 'One sentence on what changed.' } } };
@@ -551,8 +562,8 @@ export async function createMars(options: MarsOptions) {
             const rounds = agents.rounds ?? 1;
             if (!Number.isSafeInteger(rounds) || rounds < 0 || rounds > 3) throw new MarsError('ConfigurationError', 'Review rounds must be an integer from 0 to 3.');
             reports.agents({ implementer: agents.implementer.name, reviewer: agents.reviewer.name });
-            const implement = engineTurns(agents.implementer.engine, agents.implementer.engine.session(workspace.root));
-            const review = engineTurns(agents.reviewer.engine, agents.reviewer.engine.session(workspace.root, { readOnly: true }));
+            const implement = engineTurns(agents.implementer.engine, openSession(agents.implementer.engine), agents.implementer.name);
+            const review = engineTurns(agents.reviewer.engine, openSession(agents.reviewer.engine, true), agents.reviewer.name);
             const notes = (agent: EngineAgent) => agent.instructions?.trim() ? `\n\nInstructions for this agent (${agent.name}, from the project):\n${agent.instructions.trim()}` : '';
             let summary = summaryOf(await implement(withMap(`${task}\n\n---\nMARS cross-review, implementation. Read the documentation and comments of the code involved: the code must meet its documented contract, not only the example in the task. Add or update focused tests for the change with the project's test framework. Keep changes to the code involved and preserve unrelated behavior. Run the project checks (${checksList}) before finishing. Another agent will review your diff. Answer with a one-sentence summary.${notes(agents.implementer)}`), SUMMARY));
             summary = await engineChecks(implement, 'verify', [], '') || summary;
@@ -576,8 +587,7 @@ export async function createMars(options: MarsOptions) {
           } else if (options.engine) {
             if (!reproducing) throw new MarsError('ConfigurationError', '--engine requires a workflow with a reproduction phase (bugfix).');
             const engine = options.engine;
-            const session = engine.session(workspace.root);
-            const turn = engineTurns(engine, session);
+            const turn = engineTurns(engine, openSession(engine));
             const before = await snapshotTree(workspace.root);
             const declaration = engineDeclaration(await turn(withMap(`${task}\n\n---\nMARS bugfix, step 1 of 2: reproduce only. Inspect only what you need, but read the documentation and comments of the code involved: every documented rule that the current code breaks is part of the bug and needs a failing case, even if the report shows only one symptom. Write a focused automated test, with the project's existing test framework and conventions, that fails because of this bug. Assert the required behavior, not only the reported example: when the report names a rule or spec, cover its representative cases and the edge cases next to the reported one. Only create or edit test files: do not fix the bug and do not change any other file; MARS rejects the run if you do. You may run the test to see it fail. Answer with kind "reproduction", the exact command that runs only that test file from the workspace root (it must name the file, e.g. \`node --test test/x.test.js\`; a command that runs the whole suite is rejected), the test files, the report's own example as the test asserts it (reported), the behavior it covers (one sentence) and the cases it asserts. One case must be the report's own example: if you cannot make a test reproduce it, your diagnosis is wrong, so keep inspecting.\nOnly if the code is already right and an existing test is outdated: edit that test to the correct expectation instead and answer with kind "outdated", the command that runs it, the edited files and the reason (one sentence). Leave unused fields empty.`), ENGINE_DECLARATION_SCHEMA));
             const after = await snapshotTree(workspace.root);

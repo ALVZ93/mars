@@ -29,7 +29,7 @@ function fakeEngine(id, steps) {
             await mkdir(path.dirname(path.join(cwd, file)), { recursive: true });
             await writeFile(path.join(cwd, file), content);
           }
-          return { output: step.output, usage: { inputTokens: 10, outputTokens: 2 } };
+          return { output: step.output, usage: { inputTokens: 10, outputTokens: 2 }, commands: step.commands ?? [] };
         },
       };
     },
@@ -56,8 +56,8 @@ test('cross-review: implement, review with findings, correct, approve', async t 
   const answer = await instance.runWorkflow('cross-review', 'add() returns the wrong result');
   const report = instance.lastRun;
   assert.equal(answer.content, 'rounded');
-  assert.deepEqual(reviewer.sessions, [{ readOnly: true }]);
-  assert.deepEqual(implementer.sessions, [{}]);
+  assert.deepEqual(reviewer.sessions, [{ readOnly: true, protect: [], denyCommands: [] }]);
+  assert.deepEqual(implementer.sessions, [{ protect: [], denyCommands: [] }]);
   assert.match(reviewer.prompts[0].prompt, /a \+ b/, 'the reviewer sees the diff');
   assert.match(reviewer.prompts[0].prompt, /Focus on rounding\./, 'agent instructions reach the agent');
   assert.match(implementer.prompts[1].prompt, /not rounded as documented/);
@@ -182,4 +182,43 @@ test('mars init writes an AGENTS.md skeleton with the detected checks and never 
   const second = spawnSync(process.execPath, [cli, 'init'], { cwd: root, encoding: 'utf8' });
   assert.match(second.stdout, /AGENTS\.md already exists/);
   assert.equal(await readFile(path.join(root, 'AGENTS.md'), 'utf8'), '# mine\n');
+});
+
+test('policy: commands are unwrapped from the engine shell and matched by prefix across chains', async () => {
+  const { deniedCommand, unwrapShell } = await import('../dist/packages/sdk/src/contract.js');
+  assert.equal(unwrapShell(String.raw`"C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe" -Command 'npm test'`), 'npm test');
+  assert.equal(unwrapShell(String.raw`/bin/bash -lc 'echo '\''hi'\'''`), "echo 'hi'");
+  assert.equal(unwrapShell('npm test'), 'npm test');
+  assert.equal(deniedCommand("/bin/bash -lc 'npm test && git push origin main'", ['git push']), 'git push');
+  assert.equal(deniedCommand('FOO=1 rm -rf build', ['rm -rf']), 'rm -rf');
+  assert.equal(deniedCommand('git pushx', ['git push']), undefined);
+  assert.equal(deniedCommand('npm test | grep ok', ['git push']), undefined);
+});
+
+test('policy: a denied command fails the run for any engine; commands are recorded; protected files hold', async t => {
+  const root = await project(t);
+  const implementer = fakeEngine('i', [{ write: { 'calc.mjs': FIXED }, commands: ["/bin/bash -lc 'node --test'", "/bin/bash -lc 'git push origin main'"], output: { summary: 's' } }]);
+  const reviewer = fakeEngine('r', []);
+  const instance = await mars(t, root, implementer, reviewer, {}, { denyCommands: ['git push'], protect: ['secret.txt'] });
+  await assert.rejects(instance.runWorkflow('cross-review', 'bug'), /Policy violated: impl ran `git push origin main` \(contract\.denyCommands: git push\)/);
+  assert.deepEqual(instance.lastRun.commands, [{ agent: 'impl', command: 'node --test' }, { agent: 'impl', command: 'git push origin main' }]);
+  assert.deepEqual(implementer.sessions, [{ protect: ['secret.txt'], denyCommands: ['git push'] }]);
+  assert.equal(reviewer.prompts.length, 0, 'no review after a policy violation');
+
+  const other = await project(t);
+  await writeFile(path.join(other, 'secret.txt'), 'v1');
+  const editor = fakeEngine('i', [{ write: { 'secret.txt': 'v2' }, output: { summary: 's' } }]);
+  const second = await mars(t, other, editor, fakeEngine('r', [{ output: APPROVE }]), {}, { protect: ['secret.txt'] });
+  await assert.rejects(second.runWorkflow('cross-review', 'bug'), /Task contract violated: protected files changed \(secret\.txt\)/);
+});
+
+test('config: contract.denyCommands is validated and merges with protect', async () => {
+  const { mergeConfig } = await import('../dist/packages/sdk/src/internal.js');
+  const merged = mergeConfig({ contract: { protect: ['a/**'] } }, { contract: { denyCommands: ['git push'] } });
+  assert.deepEqual(merged.contract, { protect: ['a/**'], denyCommands: ['git push'] });
+  assert.deepEqual(mergeConfig().contract, { protect: [], denyCommands: [] });
+  const { saveConfig } = await import('../dist/packages/sdk/src/internal.js');
+  const dir = await mkdtemp(path.join(tmpdir(), 'mars-policy-'));
+  await assert.rejects(saveConfig(path.join(dir, 'c.json'), { contract: { denyCommands: ['Bash(x)'] } }), /denyCommands must be up to 64 command prefixes/);
+  await rm(dir, { recursive: true, force: true });
 });

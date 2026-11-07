@@ -123,8 +123,10 @@ Requiere Git con al menos un commit; no admite submódulos ni `--sandbox docker`
 `--workflow bugfix` exige un test que reproduzca el bug: el agente lo escribe y lo declara, MARS comprueba que falla antes del arreglo y que pasa después, y el test queda protegido. `contract.protect` añade globs que ningún workflow puede modificar:
 
 ```json
-{ "contract": { "protect": ["tests/**", "fixtures/**"] } }
+{ "contract": { "protect": ["tests/**", "fixtures/**"], "denyCommands": ["git push", "npm publish", "rm -rf"] } }
 ```
+
+Las dos listas valen para todos los motores ([ADR 012](decisions/012-one-policy-every-engine.md)). Claude Code las recibe como reglas de denegación y no puede saltárselas. Codex no admite reglas por comando: MARS lee los comandos que ejecutó y compara los ficheros protegidos tras cada turno, y si incumple la política la ejecución falla (*Policy violated* o *Contract violated*). Con Codex esto detecta, no impide: el comando ya se ejecutó dentro de su sandbox, sin red y con escritura limitada al workspace. Cada comando que ejecuta un motor queda en el informe JSON y resumido en el recibo.
 
 ```sh
 mars run "add() devuelve un resultado incorrecto" --workflow bugfix --isolate --receipt reports/add-fix.md

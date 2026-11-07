@@ -126,6 +126,7 @@ export async function createSessionMars(target: string, root: string, values: Re
     requestTimeoutMs: loaded.config.limits.requestTimeoutMs,
     maxContextChars: loaded.config.limits.maxContextChars,
     protect: loaded.config.contract.protect,
+    denyCommands: loaded.config.contract.denyCommands,
     ...(typeof values.engine === 'string' ? { engine: (values.engine === 'claude' ? claudeEngine : codexEngine)({ ...(typeof values['engine-model'] === 'string' ? { model: values['engine-model'] } : {}), ...(values.engine === 'claude' && process.env.MARS_EVAL_CLAUDE_LOGIN === '1' ? { localLogin: true } : {}) }) } : {}),
     ...(crossReview ? { crossReview } : {}),
     // Resumed isolated sessions are detected by the SDK from their persisted metadata.

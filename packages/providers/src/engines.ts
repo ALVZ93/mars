@@ -15,10 +15,14 @@ export interface AgentEngine {
 export interface EngineSessionOptions {
   /** No file edits: enforced by the engine's own tools or sandbox. MARS also checks the tree afterwards. */
   readOnly?: boolean;
+  /** Workspace globs the agent must not edit. Claude Code refuses them; MARS checks every engine afterwards (ADR 012). */
+  protect?: readonly string[];
+  /** Command prefixes the agent must not run. Claude Code refuses them; MARS audits every engine's commands afterwards. */
+  denyCommands?: readonly string[];
 }
 export interface EngineSession {
   /** One turn that ends in JSON matching `schema`; later turns resume the same conversation. */
-  turn(prompt: string, schema: Record<string, unknown>, signal: AbortSignal): Promise<{ output: unknown; usage?: { inputTokens: number; outputTokens: number } }>;
+  turn(prompt: string, schema: Record<string, unknown>, signal: AbortSignal): Promise<{ output: unknown; usage?: { inputTokens: number; outputTokens: number }; /** Shell command lines the agent ran in this turn. */ commands?: string[] }>;
 }
 
 export interface ClaudeEngineOptions {
@@ -52,14 +56,17 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
       if (!options.localLogin && !(options.env ?? process.env).ANTHROPIC_API_KEY) throw new Error('--engine claude needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.');
       const id = randomUUID();
       let started = false;
+      const denied = [...(sessionOptions.protect ?? []).flatMap(glob => [`Edit(${glob})`, `Write(${glob})`]), ...(sessionOptions.denyCommands ?? []).map(prefix => `Bash(${prefix}:*)`)];
       return {
         async turn(prompt, schema, signal) {
           const usage = { inputTokens: 0, outputTokens: 0 };
+          const ran: string[] = [];
           // The model sometimes ends a turn in plain text without calling StructuredOutput; ask again in the same session.
           for (let attempt = 0; ; attempt++) {
             const args = ['-p', ...(options.localLogin ? [] : ['--bare']), '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort,
               '--setting-sources', 'project', '--strict-mcp-config', '--disable-slash-commands', '--permission-mode', 'acceptEdits',
               '--allowedTools', 'Read', ...(sessionOptions.readOnly ? [] : ['Edit', 'Write']), 'Glob', 'Grep', ...commands.map(command => `Bash(${command}:*)`),
+              ...(denied.length ? ['--disallowedTools', ...denied] : []),
               '--json-schema', JSON.stringify(schema), ...(started ? ['--resume', id] : ['--session-id', id])];
             const input = attempt ? 'You ended without the structured output. Do not repeat the work: answer now with the structured output only.' : prompt;
             const stdout = await run(options.executable ?? 'claude', args, cwd, input, signal, 'Claude Code');
@@ -67,7 +74,11 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
             await trace(id, stdout);
             let result: { is_error?: boolean; subtype?: string; result?: string; structured_output?: unknown; usage?: Record<string, number> } | undefined;
             for (const line of stdout.split('\n')) {
-              try { const event = JSON.parse(line); if (event.type === 'result') result = event; } catch { /* not an event */ }
+              try {
+                const event = JSON.parse(line);
+                if (event.type === 'result') result = event;
+                if (event.type === 'assistant') for (const part of event.message?.content ?? []) if (part?.type === 'tool_use' && part.name === 'Bash' && typeof part.input?.command === 'string') ran.push(part.input.command);
+              } catch { /* not an event */ }
             }
             if (!result) throw new Error(`Claude Code ended without a result: ${stdout.slice(-300)}`);
             if (result.is_error || result.subtype !== 'success') throw new Error(`Claude Code turn failed (${result.subtype ?? 'unknown'}): ${String(result.result ?? '').slice(0, 300)}`);
@@ -75,7 +86,7 @@ export function claudeEngine(options: ClaudeEngineOptions = {}): AgentEngine {
               usage.inputTokens += (result.usage.input_tokens ?? 0) + (result.usage.cache_creation_input_tokens ?? 0) + (result.usage.cache_read_input_tokens ?? 0);
               usage.outputTokens += result.usage.output_tokens ?? 0;
             }
-            if (result.structured_output !== undefined) return { output: result.structured_output, usage };
+            if (result.structured_output !== undefined) return { output: result.structured_output, usage, commands: ran };
             if (attempt >= 2) throw new Error('Claude Code ended without structured output.');
           }
         },
@@ -106,7 +117,7 @@ export function codexEngine(options: CodexEngineOptions = {}): AgentEngine {
           await trace('codex', result.finalResponse);
           let output: unknown;
           try { output = JSON.parse(result.finalResponse); } catch { throw new Error(`Codex returned a final message that is not JSON: ${result.finalResponse.slice(0, 300)}`); }
-          return { output, ...(result.usage ? { usage: { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } } : {}) };
+          return { output, commands: result.commands ?? [], ...(result.usage ? { usage: { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } } : {}) };
         },
       };
     },
