@@ -1,6 +1,7 @@
 // Runs the eval corpus in several conditions and records one JSONL row per run.
 //   mars-claude, mars-codex: MARS bugfix with --engine claude|codex doing the work
-//   xr-codex-claude, xr-claude-codex: MARS cross-review, the first agent implements and the second reviews (ADR 010)
+//   xr-codex-claude, xr-claude-codex: MARS cross-review, the first agent implements and the second reviews (ADR 010);
+//     model variants as agents: sol, luna (Codex gpt-5.6-sol / -luna), sonnet, haiku (Claude Code), e.g. xr-luna-haiku
 //   claude:   Claude Code `claude -p --bare` with ANTHROPIC_API_KEY only, edits accepted, shell limited to npm/node
 //   agy:      Antigravity `agy -p` in its sandbox with edits accepted
 //   mars:     mars run REPORT --workflow bugfix --isolate (diff applied afterwards)
@@ -35,12 +36,20 @@ const matches = (file, globs) => globs.some(glob => path.matchesGlob(file, glob)
 // Failing test names from node:test output, without the per-file summary lines.
 const failedTests = output => [...new Set([...output.matchAll(/^\s*✖ (.+?) \(\d[\d.]*m?s\)\s*$/gm)].map(match => match[1]).filter(name => !/\.eval-hidden|\.m?js$/.test(name)))];
 
+// Model variants for cross-review conditions (xr-<implementer>-<reviewer>).
+const EVAL_AGENTS = { sol: ['codex', 'gpt-5.6-sol'], luna: ['codex', 'gpt-5.6-luna'], sonnet: ['claude', 'sonnet'], haiku: ['claude', 'haiku'] };
+
 async function prepare(task) {
   const work = await mkdtemp(path.join(tmpdir(), `mars-bench-${task.id}-`));
   await cp(path.join(here, 'tasks', task.id, 'repo'), work, { recursive: true });
   await writeFile(path.join(work, '.gitignore'), 'node_modules/\n.mars/\n.eval-hidden/\nreceipt.md\nreport.json\n');
-  await mkdir(path.join(work, '.mars'));
+  await mkdir(path.join(work, '.mars', 'agents'), { recursive: true });
   await writeFile(path.join(work, '.mars', 'config.json'), JSON.stringify({ verification: { commands: task.checks } }));
+  for (const [name, [engine, model]] of Object.entries(EVAL_AGENTS)) await writeFile(path.join(work, '.mars', 'agents', `${name}.md`), `---
+engine: ${engine}
+model: ${model}
+---
+`);
   git(work, 'init', '-q'); git(work, 'config', 'user.email', 'bench@local'); git(work, 'config', 'user.name', 'bench'); git(work, 'config', 'core.autocrlf', 'false');
   git(work, 'add', '-A'); git(work, 'commit', '-qm', 'initial');
   return work;

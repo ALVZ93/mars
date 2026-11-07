@@ -1,5 +1,27 @@
 # Eval results
 
+## 2026-11-07 — cost: cheap models alone and with cross-review
+
+Question from the positioning (criterion 1): can a cheaper model, alone or with cross-review, match the best engine alone at lower cost? Same 8 hard tasks, 2 runs each, all with the contract instruction. Claude with the developer's own login (`MARS_EVAL_CLAUDE_LOGIN=1`). Rows: `results/2026-11-07T10-45-42-226Z.jsonl` (Luna alone), `…-249Z` (Haiku alone), `…-330Z` (Luna implements, Haiku reviews), `…-373Z` (Luna implements, Sonnet reviews); Sol and Sonnet alone from 2026-10-30.
+
+| Condition | Correct | Wrong but claimed done | Median time | Tokens (16 runs) | Rough cost / run |
+| --- | --- | --- | --- | --- | --- |
+| Codex **Sol** alone | **16/16** | 0 | ~48 s | 2.49 M | ~$0.78 |
+| Codex **Luna** alone | **15/16** | 1 | ~58 s | 2.06 M | **~$0.03** |
+| Luna → Haiku review | 13/16 | 3 | ~147 s | 1.94 M + 2.02 M | ~$0.04 |
+| Luna → Sonnet review | 12/16 | 4 | ~108 s | 2.25 M + 1.04 M | ~$0.16 |
+| Claude **Sonnet** alone | 8/16 | 8 | ~41 s | 2.23 M | ~$0.28 |
+| Claude **Haiku** alone | 4/16 | 12 | ~51 s | 3.96 M | ~$0.02 |
+| Sonnet → Codex Sol review (10-30) | 12/16 | 2 | ~121 s | 4.77 M + 1.18 M | ~$0.97 |
+
+*Rough cost*: all tokens at each model's input price, from third-party price lists (Sol $5, Luna $0.20, Sonnet $2, Haiku $0.10 per million input tokens; not checked against the vendors' pages). Cached input is cheaper and output dearer, so only the ratios between rows mean something. On a subscription the cost is quota, not money.
+
+- **The cost win is routing, not review.** Luna alone gets 15/16 at roughly 1/25 of Sol's price per token. On this corpus, sending the work to the cheaper model of the stronger family is what meets "same accuracy, much less cost".
+- **Claude reviewing Luna did not help; it hurt.** Every wrong Luna diff in the cross-review runs (7) was approved by the reviewer on the first round, Haiku and Sonnet alike. The losses against Luna alone (`money`: −0 not handled; `glob`; `pool`) come from the implementation turn, whose prompt differs from the plain contract prompt, plus noise at n = 2 per task. Review by a weaker family adds time and tokens without catching anything here.
+- **Review helps when the reviewer is the stronger model** (Codex Sol reviewing Sonnet: 8 → 12, from 10-30), and that is the expensive direction.
+- **Haiku alone is not usable on these tasks** (4/16, 12 wrong but claimed done).
+- **Next:** a router that sends to the cheap model first and escalates (to the stronger model or to a strong reviewer) only when the gate fails or the task is flagged hard, measured against Sol alone on held-out tasks.
+
 ## 2026-10-30 — harder corpus: cross-review (one engine implements, the other reviews)
 
 `--workflow cross-review` (ADR 010): the implementer gets the contract instruction, MARS runs the checks, the reviewer reads the diff read-only and its findings go back to the implementer for one correction round; findings still open after it make the verdict *Review findings open*. Same 8 tasks, 2 runs each; Claude with the developer's own login (`MARS_EVAL_CLAUDE_LOGIN=1`). Rows: `results/2026-10-30T18-25-22-152Z.jsonl` (Codex implements, Claude reviews), `results/2026-10-30T18-25-22-218Z.jsonl` (Claude implements, Codex reviews).
