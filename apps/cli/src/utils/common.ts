@@ -64,6 +64,7 @@ Options:
   --implementer Agent that implements in cross-review (e.g. codex)
   --reviewer    Agent that reviews read-only in cross-review (e.g. claude)
   --review-rounds Correction rounds after a review with findings (0 to 3; default: 1)
+  --ci          mars init: also write .mars/gate.mjs and a GitHub workflow that runs the same gate
   --max-features mars next: features to build in a row while each is accepted (default: 1)
   --max-attempts mars next: attempts before a feature is blocked (default: 2)
   --report      Export run/check reports as JSON to a new workspace file

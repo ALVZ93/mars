@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FakeProvider, detectProjectChecks, loadAgents, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
+import { FakeProvider, detectPackageManager, detectProjectChecks, loadAgents, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
 import type { CredentialStore, RouteDecision, VerificationReport, RunReport } from '../../../../packages/sdk/src/internal.js';
 import { providerAuthCatalog } from '../../../../packages/auth/src/index.js';
 import { showMarsBoot } from '../visual.js';
@@ -210,17 +210,32 @@ export async function resumeSession(id: string, root: string, workspaceWasExplic
   throw new MarsError('ConfigurationError', `Session not found: ${id}`);
 }
 /**
- * Creates `.mars/config.json` and, when the project has no map yet, a short AGENTS.md skeleton for people to fill in.
+ * Sets up the repository harness: `.mars/config.json` with the gate (the detected checks, unless some are configured),
+ * a short AGENTS.md skeleton when the project has no map, and with `ci` the same gate as a script and a GitHub workflow.
  * It never writes project facts it cannot know: an agent-generated map helps less than a short hand-written one.
  */
-export async function initCommand(root: string): Promise<void> {
+export async function initCommand(root: string, ci = false): Promise<void> {
   await saveConfig(projectConfigPath(root), {});
   process.stdout.write(`Config: ${projectConfigPath(root)}\n`);
-  const existing = await Promise.all(['AGENTS.md', 'CLAUDE.md'].map(file => lstat(path.join(root, file)).then(() => file, () => undefined)));
-  const map = existing.find(Boolean);
+  let gate = (await loadConfig(root)).config.verification.commands;
+  if (gate.length) process.stdout.write(`Gate: ${gate.join(' · ')} (configured)\n`);
+  else {
+    const detected = await detectProjectChecks(root);
+    if ('checks' in detected) {
+      gate = detected.checks.map(check => check.command);
+      await saveConfig(projectConfigPath(root), { verification: { commands: gate } });
+      process.stdout.write(`Gate: ${gate.join(' · ')} (detected, saved as verification.commands)\n`);
+    } else process.stdout.write('Gate: no checks detected; set verification.commands with mars config.\n');
+  }
+  await writeProjectMap(root, gate);
+  if (ci) await writeCiGate(root);
+}
+
+const exists = (file: string) => lstat(file).then(() => true, () => false);
+
+async function writeProjectMap(root: string, gate: readonly string[]): Promise<void> {
+  const map = (await Promise.all(['AGENTS.md', 'CLAUDE.md'].map(async file => await exists(path.join(root, file)) ? file : undefined))).find(Boolean);
   if (map) { process.stdout.write(`Map: ${map} already exists; every engine receives it.\n`); return; }
-  const configured = (await loadConfig(root)).config.verification.commands;
-  const detected = configured.length ? configured : await detectProjectChecks(root).then(result => 'checks' in result ? result.checks.map(check => check.command) : []);
   const content = [
     `# ${path.basename(root)}`,
     '',
@@ -238,7 +253,7 @@ export async function initCommand(root: string): Promise<void> {
     '',
     '## Verify',
     'Run before finishing any change:',
-    ...(detected.length ? detected.map(command => `- \`${command}\``) : ['- TODO: the commands that must pass (tests, lint, typecheck, build).']),
+    ...(gate.length ? gate.map(command => `- \`${command}\``) : ['- TODO: the commands that must pass (tests, lint, typecheck, build).']),
     '',
     '## Rules',
     'TODO: only checkable rules (e.g. "functions up to 40 lines"), not wishes.',
@@ -246,6 +261,59 @@ export async function initCommand(root: string): Promise<void> {
   ].join('\n');
   await writeFile(path.join(root, 'AGENTS.md'), content, { flag: 'wx' });
   process.stdout.write('Map: created AGENTS.md; fill in the TODOs. Every engine receives it (Claude Code users can symlink CLAUDE.md to it).\n');
+}
+
+/** The gate MARS runs after each change, as a dependency-free script; CI runs the same file on every PR. */
+const GATE_SCRIPT = `// MARS gate: the checks MARS runs after every change, for CI and people alike.
+// The commands live in .mars/config.json (verification.commands): change them there, not here.
+import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+
+const config = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
+const commands = config.verification?.commands ?? [];
+if (!commands.length) { console.error('No verification.commands in .mars/config.json.'); process.exit(1); }
+for (const command of commands) {
+  console.log(\`\\n▶ \${command}\`);
+  // Each entry is a shell command line, exactly as MARS runs it.
+  const result = spawnSync(command, { shell: true, stdio: 'inherit' });
+  if (result.status !== 0) { console.error(\`✖ \${command} (exit \${result.status ?? result.signal})\`); process.exit(result.status || 1); }
+}
+console.log(\`\\n✔ Gate passed: \${commands.length} command(s).\`);
+`;
+
+async function writeCiGate(root: string): Promise<void> {
+  const script = path.join(root, '.mars', 'gate.mjs');
+  if (await exists(script)) process.stdout.write('CI: .mars/gate.mjs already exists.\n');
+  else { await writeFile(script, GATE_SCRIPT, { flag: 'wx' }); process.stdout.write('CI: created .mars/gate.mjs (runs verification.commands).\n'); }
+  const workflow = path.join(root, '.github', 'workflows', 'mars-gate.yml');
+  if (await exists(workflow)) { process.stdout.write('CI: .github/workflows/mars-gate.yml already exists.\n'); return; }
+  const manager = await exists(path.join(root, 'package.json')) ? await detectPackageManager(root) : undefined;
+  const install = manager === 'pnpm' ? ['      - run: corepack enable', '      - run: pnpm install --frozen-lockfile']
+    : manager === 'yarn' ? ['      - run: corepack enable', '      - run: yarn install --immutable']
+    : manager === 'bun' ? ['      - uses: oven-sh/setup-bun@v2', '      - run: bun install --frozen-lockfile']
+    : manager === 'npm' ? [`      - run: ${await exists(path.join(root, 'package-lock.json')) ? 'npm ci' : 'npm install'}`] : [];
+  const content = [
+    '# The same gate MARS runs after each change (verification.commands in .mars/config.json).',
+    'name: MARS gate',
+    'on:',
+    '  pull_request:',
+    '  push:',
+    '    branches: [main]',
+    'jobs:',
+    '  gate:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '      - uses: actions/setup-node@v4',
+    '        with:',
+    "          node-version: 'lts/*'",
+    ...install,
+    '      - run: node .mars/gate.mjs',
+    '',
+  ].join('\n');
+  await mkdir(path.dirname(workflow), { recursive: true });
+  await writeFile(workflow, content, { flag: 'wx' });
+  process.stdout.write('CI: created .github/workflows/mars-gate.yml. Commit .mars/config.json and .mars/gate.mjs (check that .gitignore does not exclude them).\n');
 }
 
 export async function agentsCommand(root: string, json: boolean): Promise<void> {

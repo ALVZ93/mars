@@ -251,7 +251,7 @@ export async function detectProjectChecks(root: string): Promise<{ checks: Array
   return { checks: names.map(name => ({ name, command: `${packageManager} run ${name}` })) };
 }
 
-async function detectPackageManager(root: string): Promise<'pnpm' | 'npm' | 'yarn' | 'bun'> {
+export async function detectPackageManager(root: string): Promise<'pnpm' | 'npm' | 'yarn' | 'bun'> {
   for (const [file, manager] of [['pnpm-lock.yaml', 'pnpm'], ['yarn.lock', 'yarn'], ['bun.lockb', 'bun'], ['package-lock.json', 'npm']] as const) {
     try { await stat(path.join(root, file)); return manager; } catch { /* next */ }
   }

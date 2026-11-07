@@ -113,3 +113,30 @@ test('mars features lists status; mars next needs agents and a features file', a
   const missing = spawnSync(process.execPath, [cli, 'features'], { cwd: empty, encoding: 'utf8' });
   assert.match(missing.stderr, /No \.mars\/features\.json/);
 });
+
+test('mars init saves the detected gate; --ci adds a gate script and a workflow that run the same commands', async t => {
+  const root = await project(t);
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"', build: 'node -e "process.exit(0)"' } }));
+  await writeFile(path.join(root, 'pnpm-lock.yaml'), '');
+  const init = spawnSync(process.execPath, [cli, 'init', '--ci'], { cwd: root, encoding: 'utf8' });
+  assert.equal(init.status, 0, init.stderr);
+  assert.match(init.stdout, /Gate: pnpm run test · pnpm run build \(detected, saved as verification\.commands\)/);
+  const config = JSON.parse(await readFile(path.join(root, '.mars', 'config.json'), 'utf8'));
+  assert.deepEqual(config.verification.commands, ['pnpm run test', 'pnpm run build']);
+  const workflow = await readFile(path.join(root, '.github', 'workflows', 'mars-gate.yml'), 'utf8');
+  assert.match(workflow, /- run: corepack enable\n {6}- run: pnpm install --frozen-lockfile\n {6}- run: node \.mars\/gate\.mjs/);
+
+  // The script runs whatever the config says, in order, and fails on the first failing command.
+  await writeFile(path.join(root, '.mars', 'config.json'), JSON.stringify({ version: 1, verification: { commands: ['node -e "console.log(1)"', 'node -e "process.exit(3)"', 'node -e "console.log(2)"'] } }));
+  const failing = spawnSync(process.execPath, [path.join(root, '.mars', 'gate.mjs')], { cwd: root, encoding: 'utf8' });
+  assert.equal(failing.status, 3);
+  assert.doesNotMatch(failing.stdout, /▶ node -e "console\.log\(2\)"/);
+  await writeFile(path.join(root, '.mars', 'config.json'), JSON.stringify({ version: 1, verification: { commands: ['node -e "process.exit(0)"'] } }));
+  const passing = spawnSync(process.execPath, [path.join(root, '.mars', 'gate.mjs')], { cwd: root, encoding: 'utf8' });
+  assert.equal(passing.status, 0, passing.stderr);
+  assert.match(passing.stdout, /Gate passed: 1 command/);
+
+  const again = spawnSync(process.execPath, [cli, 'init', '--ci'], { cwd: root, encoding: 'utf8' });
+  assert.match(again.stdout, /Gate: node -e "process\.exit\(0\)" \(configured\)/);
+  assert.match(again.stdout, /gate\.mjs already exists[\s\S]*mars-gate\.yml already exists/);
+});

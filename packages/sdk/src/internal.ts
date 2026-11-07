@@ -33,7 +33,7 @@ export { GeminiProvider } from '../../providers/src/gemini.js';
 export type { GeminiProviderOptions } from '../../providers/src/gemini.js';
 export { AuthRegistry, AnthropicAuthProvider, BrowserOAuthProvider, FileCredentialStore, KeychainCredentialStore, GoogleGeminiAuthProvider, KimiCodeAuthProvider, MemoryCredentialStore, OpenAICodexAuthProvider, createCredentialStore, defaultCredentialPath, isCredential, keychainAvailable, migrateFileCredentials, openBrowser, providerAuthCatalog, refreshCredential, resolveAuthCredential, resolveCredential } from '../../auth/src/index.js';
 export type { ApiKeyCredential, AuthContext, AuthMethod, AuthNotification, AuthProvider, AuthStatus, Credential, CredentialStore, CredentialStoreMode, ExternalCredential, OAuthCredential } from '../../auth/src/index.js';
-export { McpStdioClient, ToolRegistry, connectMcpTools, createSandboxShell, sandboxStatus, workspaceTools, runProjectChecks, detectProjectChecks } from '../../tools/src/index.js';
+export { McpStdioClient, ToolRegistry, connectMcpTools, createSandboxShell, sandboxStatus, workspaceTools, runProjectChecks, detectProjectChecks, detectPackageManager } from '../../tools/src/index.js';
 export type { McpConnectResult, McpStdioServerOptions, McpToolDefinition, SandboxMode, SandboxOptions, SandboxStatus, ShellExecution, ShellExecutor, VerificationOptions, VerificationReport } from '../../tools/src/index.js';
 export { openIsolatedWorkspace, captureIsolatedResult, isolatedRunExists, listIsolatedRuns, isolatedDiff, applyIsolatedRun, discardIsolatedRun } from '../../runtime/src/index.js';
 export type { IsolatedWorkspace, IsolatedRun, IsolatedResult, IsolationOptions } from '../../runtime/src/index.js';

@@ -63,7 +63,7 @@ mars init
 mars doctor
 ```
 
-`mars init` crea un `AGENTS.md` corto con huecos `TODO` si el proyecto no tiene uno (ni `CLAUDE.md`). Rellénalo tú: qué es el proyecto, cómo arrancarlo, dónde mirar y cómo verificar. Es el mapa que MARS pasa a cada motor.
+`mars init` crea un `AGENTS.md` corto con huecos `TODO` si el proyecto no tiene uno (ni `CLAUDE.md`). Rellénalo tú: qué es el proyecto, cómo arrancarlo, dónde mirar y cómo verificar. Es el mapa que MARS pasa a cada motor. También guarda los checks detectados (`test`, `lint`, `typecheck`, `build`) como gate en `verification.commands`. `mars init --ci` añade `.mars/gate.mjs` y `.github/workflows/mars-gate.yml`, para que CI ejecute exactamente los mismos comandos que MARS.
 
 Conecta un modelo. Con una suscripción de ChatGPT:
 

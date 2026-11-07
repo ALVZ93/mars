@@ -250,7 +250,7 @@ mars run "El total no suma los céntimos" --workflow bugfix --isolate --receipt 
 | `mars` | Abre una sesión interactiva |
 | `mars "TAREA"` | Ejecuta una tarea y termina |
 | `mars features` / `mars next` | Estado de `.mars/features.json`; construir la siguiente feature con implementador y revisor |
-| `mars init` | Crea `.mars/config.json` y, si el proyecto no tiene mapa, un esqueleto corto de `AGENTS.md` con los checks detectados |
+| `mars init [--ci]` | Crea `.mars/config.json` con el gate (los checks detectados como `verification.commands`) y, si el proyecto no tiene mapa, un esqueleto corto de `AGENTS.md`. Con `--ci`, `.mars/gate.mjs` y un workflow de GitHub que ejecuta el mismo gate en cada PR |
 | `mars doctor` | Diagnostica Node, Git, configuración, credenciales y sandbox |
 | `mars login PROVEEDOR --api-key` | Guarda una API key de forma interactiva |
 | `mars login openai-codex` | Conecta una suscripción de ChatGPT mediante Codex |

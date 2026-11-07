@@ -15,7 +15,7 @@ export async function main(): Promise<void> {
     parsed = parseArgs({ allowPositionals: true, options: {
       model: { type: 'string' }, workspace: { type: 'string' }, script: { type: 'string' },
       'allow-shell': { type: 'boolean' }, 'api-key': { type: 'boolean' }, browser: { type: 'boolean' }, device: { type: 'boolean' },
-      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, engine: { type: 'string' }, 'engine-model': { type: 'string' }, implementer: { type: 'string' }, reviewer: { type: 'string' }, 'review-rounds': { type: 'string' }, 'max-features': { type: 'string' }, 'max-attempts': { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
+      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, engine: { type: 'string' }, 'engine-model': { type: 'string' }, implementer: { type: 'string' }, reviewer: { type: 'string' }, 'review-rounds': { type: 'string' }, 'max-features': { type: 'string' }, ci: { type: 'boolean' }, 'max-attempts': { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     } });
   } catch { throw new MarsError('ConfigurationError', 'Invalid command arguments. Use --help.'); }
@@ -48,7 +48,7 @@ export async function main(): Promise<void> {
   if (command === 'next') { await nextCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values as Record<string, unknown>, createCredentialStore()); return; }
   if (command === 'agents') { await agentsCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.json === true); return; }
   let root = await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined);
-  if (command === 'init') { await initCommand(root); return; }
+  if (command === 'init') { await initCommand(root, values.ci === true); return; }
   if (command === 'config') { await configCommand(positionals, root); return; }
   if (command === 'sessions') { await sessionsCommand(root, values.json === true); return; }
   if (command === 'check') { await checkCommand(root, values as Record<string, unknown>, values.json === true); return; }
