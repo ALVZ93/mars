@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { MarsError, MODEL_CATALOG, createCredentialStore, loadConfig, projectConfigPath, routeTask, saveConfig } from '../../../../packages/sdk/src/internal.js';
 import { validTarget } from '../terminal.js';
 import { authCommand, authenticatedProviders, loginCommand } from './auth.js';
-import { agentsCommand, checkCommand, configCommand, doctorCommand, evidenceCommand, healthCommand, modelsCommand, resumeSession, runTask, selectModel, sessionsCommand, skillsCommand, workflowsCommand } from './index.js';
+import { agentsCommand, checkCommand, initCommand, configCommand, doctorCommand, evidenceCommand, healthCommand, modelsCommand, resumeSession, runTask, selectModel, sessionsCommand, skillsCommand, workflowsCommand } from './index.js';
 import { interactive } from '../interactive/repl.js';
 import { help, safe, workspaceRoot } from '../utils/common.js';
 import { resolveTarget } from '../session.js';
@@ -45,7 +45,7 @@ export async function main(): Promise<void> {
   if (command === 'workflows') { await workflowsCommand(); return; }
   if (command === 'agents') { await agentsCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.json === true); return; }
   let root = await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined);
-  if (command === 'init') { await saveConfig(projectConfigPath(root), {}); process.stdout.write(`Created ${projectConfigPath(root)}\n`); return; }
+  if (command === 'init') { await initCommand(root); return; }
   if (command === 'config') { await configCommand(positionals, root); return; }
   if (command === 'sessions') { await sessionsCommand(root, values.json === true); return; }
   if (command === 'check') { await checkCommand(root, values as Record<string, unknown>, values.json === true); return; }

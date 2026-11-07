@@ -97,7 +97,9 @@ export function codexEngine(options: CodexEngineOptions = {}): AgentEngine {
       const thread = runner.startThread({ model, workingDirectory: cwd, sandboxMode: sessionOptions.readOnly ? 'read-only' : 'workspace-write', approvalPolicy: 'never', skipGitRepoCheck: true, networkAccessEnabled: false,
         modelReasoningEffort: effort,
         // --ignore-user-config drops the user's Windows sandbox mode; the default one rejects every command.
-        ...(process.platform === 'win32' ? { windowsSandbox: 'elevated' } : {}) });
+        ...(process.platform === 'win32' ? { windowsSandbox: 'elevated' } : {}),
+        // MARS puts the project map (AGENTS.md) in the prompt for every engine; Codex must not load it twice.
+        projectDocMaxBytes: 0 });
       return {
         async turn(prompt, schema, signal) {
           const result = await thread.run(prompt, { outputSchema: schema, signal });

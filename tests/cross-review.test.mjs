@@ -43,8 +43,8 @@ async function project(t) {
   for (const args of [['init', '-q'], ['config', 'user.email', 't@local'], ['config', 'user.name', 't'], ['add', '-A'], ['commit', '-qm', 'initial']]) spawnSync('git', args, { cwd: root });
   return root;
 }
-const mars = (t, root, implementer, reviewer, extra = {}) => createMars({ workspace: root, provider: new FakeProvider([]), model: 'unused', includeProjectContext: false,
-  shellPolicy: 'allow', verificationCommands: ['node --version'],
+const mars = (t, root, implementer, reviewer, extra = {}, options = {}) => createMars({ workspace: root, provider: new FakeProvider([]), model: 'unused', includeProjectContext: false,
+  shellPolicy: 'allow', verificationCommands: ['node --version'], ...options,
   crossReview: { implementer: { name: 'impl', engine: implementer }, reviewer: { name: 'rev', engine: reviewer, instructions: 'Focus on rounding.' }, ...extra } })
   .then(instance => { t.after(() => instance.close()); return instance; });
 
@@ -125,4 +125,61 @@ test('agent files: parsed, validated and override built-ins', async t => {
   assert.equal(agents.get('codex').model, 'gpt-5.6-terra');
   assert.equal(agents.get('codex').source, path.join('.mars', 'agents', 'codex.md'));
   assert.equal(agents.get('reviewer').instructions, 'Be strict.');
+});
+
+test('engines receive the project map (AGENTS.md, or CLAUDE.md without it) in the first prompt of each session', async t => {
+  const root = await project(t);
+  await writeFile(path.join(root, 'AGENTS.md'), '# Calc\nVerify with node --version.\n');
+  spawnSync('git', ['add', '-A'], { cwd: root }); spawnSync('git', ['commit', '-qm', 'map'], { cwd: root });
+  const implementer = fakeEngine('i', [{ write: { 'calc.mjs': FIXED }, output: { summary: 's' } }, { output: { summary: 's2' } }]);
+  const reviewer = fakeEngine('r', [{ output: CHANGES }, { output: APPROVE }]);
+  const instance = await mars(t, root, implementer, reviewer, {}, { includeProjectContext: true });
+  await instance.runWorkflow('cross-review', 'bug');
+  assert.match(implementer.prompts[0].prompt, /\[project instructions: AGENTS\.md\]\n# Calc/);
+  assert.match(reviewer.prompts[0].prompt, /# Calc/);
+  assert.doesNotMatch(implementer.prompts[1].prompt, /# Calc/, 'resumed sessions already have it');
+  assert.doesNotMatch(reviewer.prompts[1].prompt, /# Calc/);
+
+  const other = await project(t);
+  await writeFile(path.join(other, 'CLAUDE.md'), '# Claude-only map\n');
+  const solo = fakeEngine('i', [{ output: { summary: 's' } }]);
+  const second = await mars(t, other, solo, fakeEngine('r', [{ output: APPROVE }]), {}, { includeProjectContext: true });
+  await second.runWorkflow('cross-review', 'bug');
+  assert.match(solo.prompts[0].prompt, /\[project instructions: CLAUDE\.md\]/);
+
+  const bare = await project(t);
+  const none = fakeEngine('i', [{ output: { summary: 's' } }]);
+  const third = await mars(t, bare, none, fakeEngine('r', [{ output: APPROVE }]), {}, { includeProjectContext: true });
+  await third.runWorkflow('cross-review', 'bug');
+  assert.doesNotMatch(none.prompts[0].prompt, /Project instructions/);
+});
+
+test('the Codex engine does not load AGENTS.md itself and reviews in a read-only sandbox', async () => {
+  const { codexEngine } = await import('../dist/packages/sdk/src/internal.js');
+  const threads = [];
+  const runner = { startThread(options) { threads.push(options); return { async run() { return { finalResponse: '{"summary":"ok"}' }; } }; } };
+  const engine = codexEngine({ runner });
+  await engine.session('.').turn('p', {}, new AbortController().signal);
+  await engine.session('.', { readOnly: true }).turn('p', {}, new AbortController().signal);
+  assert.equal(threads[0].projectDocMaxBytes, 0);
+  assert.equal(threads[0].sandboxMode, 'workspace-write');
+  assert.equal(threads[1].sandboxMode, 'read-only');
+});
+
+test('mars init writes an AGENTS.md skeleton with the detected checks and never overwrites a map', async t => {
+  const cli = path.join(process.cwd(), 'dist', 'apps', 'cli', 'src', 'index.js');
+  const root = await mkdtemp(path.join(tmpdir(), 'mars-init-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', lint: 'eslint .' } }));
+  await writeFile(path.join(root, 'pnpm-lock.yaml'), '');
+  const first = spawnSync(process.execPath, [cli, 'init'], { cwd: root, encoding: 'utf8' });
+  assert.equal(first.status, 0, first.stderr);
+  const { readFile } = await import('node:fs/promises');
+  const map = await readFile(path.join(root, 'AGENTS.md'), 'utf8');
+  assert.match(map, /## Verify\nRun before finishing any change:\n- `pnpm run test`\n- `pnpm run lint`/);
+  assert.match(map, /TODO: one or two sentences/);
+  await writeFile(path.join(root, 'AGENTS.md'), '# mine\n');
+  const second = spawnSync(process.execPath, [cli, 'init'], { cwd: root, encoding: 'utf8' });
+  assert.match(second.stdout, /AGENTS\.md already exists/);
+  assert.equal(await readFile(path.join(root, 'AGENTS.md'), 'utf8'), '# mine\n');
 });

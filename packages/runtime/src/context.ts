@@ -48,8 +48,10 @@ export async function discoverProjectFiles(workspace: string, home = process.env
     current = parent;
   }
   for (const directory of ancestors) {
-    const file = path.join(directory, 'AGENTS.md');
-    const content = await readContextFile(file);
+    // AGENTS.md is the map every engine reads; CLAUDE.md stands in for it in Claude-only projects.
+    let file = path.join(directory, 'AGENTS.md');
+    let content = await readContextFile(file);
+    if (content === undefined && directory === path.resolve(workspace)) { file = path.join(directory, 'CLAUDE.md'); content = await readContextFile(file); }
     if (content !== undefined) {
       if (directory === path.resolve(workspace)) projectResults.push({ path: file, content, scope: 'project' });
       else parentResults.push({ path: file, content, scope: 'parent' });

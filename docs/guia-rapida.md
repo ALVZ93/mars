@@ -63,6 +63,8 @@ mars init
 mars doctor
 ```
 
+`mars init` crea un `AGENTS.md` corto con huecos `TODO` si el proyecto no tiene uno (ni `CLAUDE.md`). Rellénalo tú: qué es el proyecto, cómo arrancarlo, dónde mirar y cómo verificar. Es el mapa que MARS pasa a cada motor.
+
 Conecta un modelo. Con una suscripción de ChatGPT:
 
 ```sh

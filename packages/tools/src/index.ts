@@ -204,14 +204,9 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
   const unverified = (reason: string): VerificationReport => ({ workspace: workspace.root, plannedCommands: planned.map(check => check.command), checks: [], passed: false, verified: false, reason });
   if (configured.length) configured.filter(command => !prepend.includes(command)).forEach((command, index) => planned.push({ name: `configured-${index + 1}`, command }));
   else {
-    try { packageJson = JSON.parse(await readFile(path.join(workspace.root, 'package.json'), 'utf8')) as typeof packageJson; }
-    catch { return unverified('No verification commands configured and no readable package.json found.'); }
-    const scripts = packageJson.scripts ?? {};
-    const names = ['typecheck', 'test', 'lint', 'build'].filter(name => typeof scripts[name] === 'string');
-    if (!names.length) return unverified('No configured or standard verification commands found.');
-    const declaredManager = packageJson.packageManager?.split('@')[0];
-    const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(workspace.root);
-    names.map(name => ({ name, command: `${packageManager} run ${name}` })).filter(check => !prepend.includes(check.command)).forEach(check => planned.push(check));
+    const detected = await detectProjectChecks(workspace.root);
+    if ('reason' in detected) return unverified(detected.reason);
+    detected.checks.filter(check => !prepend.includes(check.command)).forEach(check => planned.push(check));
   }
   const checks: VerificationResult[] = [];
   const timeout = options.timeoutMs ?? 120_000;
@@ -241,6 +236,19 @@ export async function runProjectChecks(workspace: Workspace, signal: AbortSignal
   }
   const passed = checks.length === planned.length && checks.every(check => check.passed);
   return { workspace: workspace.root, plannedCommands: planned.map(check => check.command), checks, passed, verified: passed && checks.length > 0 };
+}
+
+/** Standard package scripts (typecheck, test, lint, build) run with the project's package manager. */
+export async function detectProjectChecks(root: string): Promise<{ checks: Array<{ name: string; command: string }> } | { reason: string }> {
+  let packageJson: { scripts?: Record<string, unknown>; packageManager?: string };
+  try { packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as typeof packageJson; }
+  catch { return { reason: 'No verification commands configured and no readable package.json found.' }; }
+  const scripts = packageJson.scripts ?? {};
+  const names = ['typecheck', 'test', 'lint', 'build'].filter(name => typeof scripts[name] === 'string');
+  if (!names.length) return { reason: 'No configured or standard verification commands found.' };
+  const declaredManager = packageJson.packageManager?.split('@')[0];
+  const packageManager = declaredManager && ['pnpm', 'npm', 'yarn', 'bun'].includes(declaredManager) ? declaredManager : await detectPackageManager(root);
+  return { checks: names.map(name => ({ name, command: `${packageManager} run ${name}` })) };
 }
 
 async function detectPackageManager(root: string): Promise<'pnpm' | 'npm' | 'yarn' | 'bun'> {

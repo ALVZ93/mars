@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FakeProvider, loadAgents, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
+import { FakeProvider, detectProjectChecks, loadAgents, renderReceipt, FileEvidenceStore, FileSessionStore, FileKnowledgeStore, MarsError, MODEL_CATALOG, Permissions, ProviderHealthTracker, SkillRegistry, Workspace, createCredentialStore, createMars, createSandboxShell, defaultSessionDirectory, evidencePath, eventLogPath, keychainAvailable, loadConfig, projectConfigPath, readEventLogEntries, runProjectChecks, sandboxStatus, saveConfig } from '../../../../packages/sdk/src/internal.js';
 import type { CredentialStore, RouteDecision, VerificationReport, RunReport } from '../../../../packages/sdk/src/internal.js';
 import { providerAuthCatalog } from '../../../../packages/auth/src/index.js';
 import { showMarsBoot } from '../visual.js';
@@ -209,6 +209,45 @@ export async function resumeSession(id: string, root: string, workspaceWasExplic
   }
   throw new MarsError('ConfigurationError', `Session not found: ${id}`);
 }
+/**
+ * Creates `.mars/config.json` and, when the project has no map yet, a short AGENTS.md skeleton for people to fill in.
+ * It never writes project facts it cannot know: an agent-generated map helps less than a short hand-written one.
+ */
+export async function initCommand(root: string): Promise<void> {
+  await saveConfig(projectConfigPath(root), {});
+  process.stdout.write(`Config: ${projectConfigPath(root)}\n`);
+  const existing = await Promise.all(['AGENTS.md', 'CLAUDE.md'].map(file => lstat(path.join(root, file)).then(() => file, () => undefined)));
+  const map = existing.find(Boolean);
+  if (map) { process.stdout.write(`Map: ${map} already exists; every engine receives it.\n`); return; }
+  const configured = (await loadConfig(root)).config.verification.commands;
+  const detected = configured.length ? configured : await detectProjectChecks(root).then(result => 'checks' in result ? result.checks.map(check => check.command) : []);
+  const content = [
+    `# ${path.basename(root)}`,
+    '',
+    '<!-- Map for coding agents (MARS, Codex, Claude Code). Keep it short: an index, not an encyclopedia.',
+    '     Write it yourself, link longer docs instead of copying them, and add a rule only after an agent got it wrong twice. -->',
+    '',
+    '## What this is',
+    'TODO: one or two sentences on what the project does and for whom.',
+    '',
+    '## Run it',
+    'TODO: how to install and start it locally.',
+    '',
+    '## Where to look',
+    'TODO: the main folders and what lives in each; links to longer docs.',
+    '',
+    '## Verify',
+    'Run before finishing any change:',
+    ...(detected.length ? detected.map(command => `- \`${command}\``) : ['- TODO: the commands that must pass (tests, lint, typecheck, build).']),
+    '',
+    '## Rules',
+    'TODO: only checkable rules (e.g. "functions up to 40 lines"), not wishes.',
+    '',
+  ].join('\n');
+  await writeFile(path.join(root, 'AGENTS.md'), content, { flag: 'wx' });
+  process.stdout.write('Map: created AGENTS.md; fill in the TODOs. Every engine receives it (Claude Code users can symlink CLAUDE.md to it).\n');
+}
+
 export async function agentsCommand(root: string, json: boolean): Promise<void> {
   const agents = [...(await loadAgents(root)).values()];
   if (json) { process.stdout.write(`${JSON.stringify(agents.map(({ instructions, ...agent }) => ({ ...agent, instructions: Boolean(instructions) })), null, 2)}\n`); return; }

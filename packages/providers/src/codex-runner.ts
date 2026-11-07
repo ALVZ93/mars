@@ -25,6 +25,8 @@ export interface CodexThreadOptions {
   threadSource?: string;
   /** Windows sandbox mode (`windows.sandbox`), needed when shell commands run inside Codex's own sandbox. */
   windowsSandbox?: string;
+  /** `0` stops Codex from loading AGENTS.md itself (MARS passes the project map in the prompt). */
+  projectDocMaxBytes?: number;
 }
 export interface CodexTurnResult { finalResponse: string; usage: { input_tokens: number; output_tokens: number } | null }
 
@@ -101,6 +103,7 @@ export class CodexCliRunner {
           if (options.webSearchMode) args.push('--config', `web_search="${options.webSearchMode}"`);
           if (options.approvalPolicy) args.push('--config', `approval_policy="${options.approvalPolicy}"`);
           if (options.windowsSandbox) args.push('--config', `windows.sandbox="${options.windowsSandbox}"`);
+          if (options.projectDocMaxBytes !== undefined) args.push('--config', `project_doc_max_bytes=${options.projectDocMaxBytes}`);
           if (threadId) args.push('resume', threadId);
           const { executable, pathDirs } = this.#binary();
           const env: NodeJS.ProcessEnv = { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ?? 'codex_sdk_ts' };

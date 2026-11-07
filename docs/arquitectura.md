@@ -45,7 +45,7 @@ flowchart TD
 ```
 
 1. **Arranque (CLI).** Carga la configuración en este orden de precedencia: flags, entorno, proyecto (`.mars/config.json`) y usuario. Resuelve credenciales desde el llavero del sistema y crea el proveedor. Ejemplo: `openai-codex:gpt-5.6-sol`.
-2. **Sesión (SDK, `createMars`).** Abre el workspace con sus fronteras de rutas. Con `--isolate` crea un worktree desechable (ver [Aislamiento](#aislamiento)). Registra herramientas, servidores MCP y permisos. Carga instrucciones del proyecto (`AGENTS.md`, `.mars/instructions.md`), memoria aprobada y skills relevantes.
+2. **Sesión (SDK, `createMars`).** Abre el workspace con sus fronteras de rutas. Con `--isolate` crea un worktree desechable (ver [Aislamiento](#aislamiento)). Registra herramientas, servidores MCP y permisos. Carga instrucciones del proyecto (`AGENTS.md`, o `CLAUDE.md` si no hay `AGENTS.md`, y `.mars/instructions.md`), memoria aprobada y skills relevantes. Los engines (`--engine`, `cross-review`) reciben solo los ficheros del propio proyecto al principio de cada sesión, porque Claude Code corre con `--bare` y Codex sin su carga de `AGENTS.md`: un mismo mapa para todos los motores.
 3. **Workflow.** Una secuencia de fases, cada una con rol, instrucción y herramientas permitidas. Cada fase es una llamada a `runAgent`.
 4. **Bucle del agente (`core/agent-loop.ts`).** Pide al modelo, ejecuta las tool calls que devuelve, añade los resultados y repite hasta una respuesta sin herramientas. Aplica límites de turnos, tool calls, tiempo y contexto; reintenta errores transitorios si se configura; guarda un checkpoint tras cada turno.
 5. **Verificación.** MARS, no el modelo, ejecuta los comandos de verificación y decide por exit code. Un check solo pasa con exit 0; no encontrar checks cuenta como fallo.
@@ -146,6 +146,6 @@ Resultados en [evals/RESULTS.md](../evals/RESULTS.md).
 
 - El control con test vaciado detecta fallos independientes del contenido del test. No detecta un test que dependa de su contenido pero falle por otra razón.
 - Un archivo protegido que se modifica y se restaura entre dos comprobaciones no es detectable.
-- `--ignore-user-config` no desactiva el `AGENTS.md`, las skills ni las reglas del usuario de Codex.
+- `--ignore-user-config` no desactiva las skills ni las reglas del usuario de Codex. El `AGENTS.md` del proyecto sí se desactiva en los engines (`project_doc_max_bytes=0`): MARS lo pasa en el prompt a todos los motores por igual.
 - La shell en modo host corre con los permisos del usuario.
 - Las fases A y B se han probado en Windows (suite completa y ejecuciones reales). macOS y Linux están previstos en el diseño (grupos de procesos POSIX, symlinks), pero no se han ejecutado con estos cambios.
