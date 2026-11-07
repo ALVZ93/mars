@@ -16,6 +16,8 @@ mars models                           List known models and auth state
 mars route "task"                    Explain deterministic model routing
 mars workflows                        List built-in workflows
 mars agents                           List agents (built-in and .mars/agents/*.md)
+mars features                         List .mars/features.json with status and the next feature
+mars next                             Build the next feature: cross-review, then accepted/passing/blocked
 mars doctor                           Diagnose local configuration
   mars init                             Create .mars/config.json
   mars config [show|path|set KEY VALUE] Read or update configuration
@@ -62,6 +64,8 @@ Options:
   --implementer Agent that implements in cross-review (e.g. codex)
   --reviewer    Agent that reviews read-only in cross-review (e.g. claude)
   --review-rounds Correction rounds after a review with findings (0 to 3; default: 1)
+  --max-features mars next: features to build in a row while each is accepted (default: 1)
+  --max-attempts mars next: attempts before a feature is blocked (default: 2)
   --report      Export run/check reports as JSON to a new workspace file
   --receipt     Export a Markdown receipt (proof, contract, checks, changes) to a new workspace file
   --verify      Run standard project checks after the agent finishes

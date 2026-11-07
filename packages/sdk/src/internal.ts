@@ -16,7 +16,7 @@ import type { OutdatedTestDeclaration, ReproductionDeclaration } from './contrac
 import type { TaskBudgetLimits } from './budget.js';
 export type { RunReport } from './reports.js';
 export type { BudgetReport, TaskBudgetLimits } from './budget.js';
-export { renderReceipt } from './receipt.js';
+export { receiptVerdict, renderReceipt } from './receipt.js';
 export { FileKnowledgeStore } from '../../runtime/src/index.js';
 export type { KnowledgeStore, KnowledgeSnapshot, KnowledgeEntry, KnowledgeKind, KnowledgeProposal, KnowledgeSource, SessionRunReceipt } from '../../runtime/src/index.js';
 
@@ -37,8 +37,8 @@ export { McpStdioClient, ToolRegistry, connectMcpTools, createSandboxShell, sand
 export type { McpConnectResult, McpStdioServerOptions, McpToolDefinition, SandboxMode, SandboxOptions, SandboxStatus, ShellExecution, ShellExecutor, VerificationOptions, VerificationReport } from '../../tools/src/index.js';
 export { openIsolatedWorkspace, captureIsolatedResult, isolatedRunExists, listIsolatedRuns, isolatedDiff, applyIsolatedRun, discardIsolatedRun } from '../../runtime/src/index.js';
 export type { IsolatedWorkspace, IsolatedRun, IsolatedResult, IsolationOptions } from '../../runtime/src/index.js';
-export { BUILTIN_AGENTS, loadAgents, parseAgent, Workspace, Permissions, PermissionEngine, isDestructiveShell, isNetworkShell, buildProjectContext, SkillRegistry, loadConfig, saveConfig, mergeConfig, defaultConfigPath, projectConfigPath, MODEL_CATALOG, ModelRegistry, routeTask, classifyTask, FileSessionStore, defaultSessionDirectory, WorkflowRegistry, selectWorkflow, FileEvidenceStore, evidencePath, FileEventLog, ProviderHealthTracker, eventLogPath, readEventLog, readEventLogEntries } from '../../runtime/src/index.js';
-export type { AgentDefinition, Policy, PermissionPolicies, PermissionKind, Session, SessionStore, SessionSummary, MarsConfig, McpServerConfig, ConfigPaths, ConfigPatch, ProjectContext, ContextOptions, Skill, RouteOptions, RouteDecision, TaskRole, WorkflowDefinition, WorkflowPhase, EvidenceRun, EvidenceSnapshot, EvidenceStore, EvidenceSuggestion, SkillEvidence, WorkflowEvidence, EventLogEntry, FileEventLogOptions, ProviderHealth } from '../../runtime/src/index.js';
+export { BUILTIN_AGENTS, loadAgents, parseAgent, featureOutcome, featureTask, featuresPath, loadFeatures, nextFeature, parseFeatures, saveFeatures, Workspace, Permissions, PermissionEngine, isDestructiveShell, isNetworkShell, buildProjectContext, SkillRegistry, loadConfig, saveConfig, mergeConfig, defaultConfigPath, projectConfigPath, MODEL_CATALOG, ModelRegistry, routeTask, classifyTask, FileSessionStore, defaultSessionDirectory, WorkflowRegistry, selectWorkflow, FileEvidenceStore, evidencePath, FileEventLog, ProviderHealthTracker, eventLogPath, readEventLog, readEventLogEntries } from '../../runtime/src/index.js';
+export type { AgentDefinition, Feature, FeatureList, FeatureStatus, Policy, PermissionPolicies, PermissionKind, Session, SessionStore, SessionSummary, MarsConfig, McpServerConfig, ConfigPaths, ConfigPatch, ProjectContext, ContextOptions, Skill, RouteOptions, RouteDecision, TaskRole, WorkflowDefinition, WorkflowPhase, EvidenceRun, EvidenceSnapshot, EvidenceStore, EvidenceSuggestion, SkillEvidence, WorkflowEvidence, EventLogEntry, FileEventLogOptions, ProviderHealth } from '../../runtime/src/index.js';
 
 export interface MarsOptions {
   workspace: string;

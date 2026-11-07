@@ -136,7 +136,8 @@ export async function createSessionMars(target: string, root: string, values: Re
       ...(typeof values['budget-requests'] === 'string' ? { maxModelRequests: positive(values['budget-requests'], 1) } : {}),
       ...(typeof values['budget-tokens'] === 'string' ? { maxTokens: positive(values['budget-tokens'], 1) } : {}),
     },
-    verificationCommands: loaded.config.verification.commands,
+    // mars next passes the project gate plus the feature's own commands.
+    verificationCommands: Array.isArray(values.verificationCommands) ? values.verificationCommands as string[] : loaded.config.verification.commands,
     maxRepairAttempts: typeof values['repair-attempts'] === 'string' ? Number(values['repair-attempts']) : loaded.config.verification.maxRepairAttempts,
     shellPolicy, permissionPolicies: { ...loaded.config.permissions, shell: shellPolicy }, approveShell: approval(screen), includeProjectContext: true,
     evidenceStore,

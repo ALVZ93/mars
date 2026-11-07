@@ -8,13 +8,14 @@ import { help, safe, workspaceRoot } from '../utils/common.js';
 import { resolveTarget } from '../session.js';
 import { knowledgeCommand, learnCommand } from './knowledge.js';
 import { runsCommand } from './runs.js';
+import { featuresCommand, nextCommand } from './features.js';
 export async function main(): Promise<void> {
   let parsed;
   try {
     parsed = parseArgs({ allowPositionals: true, options: {
       model: { type: 'string' }, workspace: { type: 'string' }, script: { type: 'string' },
       'allow-shell': { type: 'boolean' }, 'api-key': { type: 'boolean' }, browser: { type: 'boolean' }, device: { type: 'boolean' },
-      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, engine: { type: 'string' }, 'engine-model': { type: 'string' }, implementer: { type: 'string' }, reviewer: { type: 'string' }, 'review-rounds': { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
+      'max-turns': { type: 'string' }, 'max-tool-calls': { type: 'string' }, timeout: { type: 'string' }, 'max-retries': { type: 'string' }, 'retry-delay': { type: 'string' }, 'repair-attempts': { type: 'string' }, 'budget-time': { type: 'string' }, 'budget-requests': { type: 'string' }, 'budget-tokens': { type: 'string' }, isolate: { type: 'boolean' }, receipt: { type: 'string' }, stat: { type: 'boolean' }, report: { type: 'string' }, sandbox: { type: 'string' }, route: { type: 'boolean' }, workflow: { type: 'string' }, engine: { type: 'string' }, 'engine-model': { type: 'string' }, implementer: { type: 'string' }, reviewer: { type: 'string' }, 'review-rounds': { type: 'string' }, 'max-features': { type: 'string' }, 'max-attempts': { type: 'string' }, verify: { type: 'boolean' }, json: { type: 'boolean' }, 'no-save': { type: 'boolean' }, 'no-animation': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     } });
   } catch { throw new MarsError('ConfigurationError', 'Invalid command arguments. Use --help.'); }
@@ -23,7 +24,7 @@ export async function main(): Promise<void> {
   if (values.version) { process.stdout.write('0.1.0\n'); return; }
   const command = positionals[0];
   if (command === 'resume' && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new MarsError('ConfigurationError', 'Resuming an interactive session requires a terminal.');
-  const known = new Set(['run', 'login', 'logout', 'auth', 'resume', 'new', 'sessions', 'check', 'models', 'route', 'workflows', 'doctor', 'init', 'config', 'skills', 'memory', 'learn', 'evidence', 'health', 'runs', 'agents']);
+  const known = new Set(['run', 'login', 'logout', 'auth', 'resume', 'new', 'sessions', 'check', 'models', 'route', 'workflows', 'doctor', 'init', 'config', 'skills', 'memory', 'learn', 'evidence', 'health', 'runs', 'agents', 'features', 'next']);
   const shorthand = Boolean(command && !known.has(command) && !command.startsWith('/'));
   if (values.report !== undefined && command !== 'run' && !shorthand) throw new MarsError('ConfigurationError', '--report requires a non-interactive task.');
   if (values.receipt !== undefined && command !== 'run' && !shorthand) throw new MarsError('ConfigurationError', '--receipt requires a non-interactive task.');
@@ -33,7 +34,7 @@ export async function main(): Promise<void> {
   if (values.engine !== undefined && typeof values.workflow !== 'string') throw new MarsError('ConfigurationError', '--engine requires --workflow bugfix.');
   if (values.engine === 'claude' && process.env.MARS_EVAL_CLAUDE_LOGIN === '1') process.stderr.write('[engine] MARS_EVAL_CLAUDE_LOGIN=1: Claude Code runs with its own login. Developer evaluation only; not a supported product mode.\n');
   else if (values.engine === 'claude' && !process.env.ANTHROPIC_API_KEY) throw new MarsError('ConfigurationError', '--engine claude needs ANTHROPIC_API_KEY: MARS runs Claude Code only with an Anthropic API key, never with a Claude subscription login.');
-  for (const flag of ['implementer', 'reviewer', 'review-rounds'] as const) if (values[flag] !== undefined && values.workflow !== 'cross-review') throw new MarsError('ConfigurationError', `--${flag} requires --workflow cross-review.`);
+  for (const flag of ['implementer', 'reviewer', 'review-rounds'] as const) if (values[flag] !== undefined && values.workflow !== 'cross-review' && command !== 'next') throw new MarsError('ConfigurationError', `--${flag} requires --workflow cross-review.`);
   if (values.engine !== undefined && values.workflow === 'cross-review') throw new MarsError('ConfigurationError', '--engine does not apply to cross-review: use --implementer and --reviewer.');
   if (values['engine-model'] !== undefined && values.engine === undefined) throw new MarsError('ConfigurationError', '--engine-model requires --engine.');
   if (command === 'run' && !positionals.slice(1).join(' ').trim()) throw new MarsError('ConfigurationError', 'Provide a task to run.');
@@ -43,6 +44,8 @@ export async function main(): Promise<void> {
   if (command === 'login') { if (!process.stdin.isTTY) throw new MarsError('ConfigurationError', 'Login requires an interactive terminal.'); await loginCommand(positionals[1], values as Record<string, unknown>, createCredentialStore()); return; }
   if (command === 'models') { await modelsCommand(values.json === true); return; }
   if (command === 'workflows') { await workflowsCommand(); return; }
+  if (command === 'features') { await featuresCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.json === true); return; }
+  if (command === 'next') { await nextCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values as Record<string, unknown>, createCredentialStore()); return; }
   if (command === 'agents') { await agentsCommand(await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined), values.json === true); return; }
   let root = await workspaceRoot(typeof values.workspace === 'string' ? values.workspace : undefined);
   if (command === 'init') { await initCommand(root); return; }

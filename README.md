@@ -24,6 +24,7 @@ mars run "La página 1 muestra los elementos de la página 2" --workflow bugfix 
 - **Prueba de arreglo.** El agente escribe un test que reproduce el bug. MARS exige que falle antes del arreglo, que el fallo venga de ese test y que pase después. El test queda protegido para que no se pueda «arreglar» debilitándolo.
 - **Con la CLI que ya usas.** `--engine claude` o `--engine codex` deja que Claude Code o Codex escriban el test y el arreglo; MARS sigue exigiendo y comprobando la prueba. Claude Code se usa solo con `ANTHROPIC_API_KEY`, nunca con el login de una suscripción de Claude.
 - **Un modelo hace, otro revisa.** `--workflow cross-review --implementer codex --reviewer claude`: un agente implementa, otro de otro proveedor revisa el diff en solo lectura y sus hallazgos vuelven al implementador. Los agentes se declaran en `.mars/agents/*.md` (motor, modelo, permisos, instrucciones); `mars agents` los lista. Ver [ADR 010](docs/decisions/010-agents-and-cross-review.md).
+- **Features con estado verificado.** `.mars/features.json` lista qué construir (escenarios de aceptación, spec, dependencias). `mars next --allow-shell` coge la siguiente, la pasa por `cross-review` y la marca `accepted` solo si los checks pasan y el revisor aprueba; con hallazgos abiertos queda `passing` y, agotados los intentos, `blocked`. El estado lo escribe MARS, nunca el modelo. Ver [ADR 011](docs/decisions/011-feature-loop.md).
 - **Tu árbol intacto.** `--isolate` trabaja en una copia aparte. `mars runs diff|apply|discard` deciden qué llega a tu proyecto.
 - **Presupuesto** de tiempo, peticiones y tokens para toda la tarea.
 - **Recibo Markdown** listo para un PR, sin texto del modelo y con las credenciales redactadas.
@@ -248,6 +249,7 @@ mars run "El total no suma los céntimos" --workflow bugfix --isolate --receipt 
 | --- | --- |
 | `mars` | Abre una sesión interactiva |
 | `mars "TAREA"` | Ejecuta una tarea y termina |
+| `mars features` / `mars next` | Estado de `.mars/features.json`; construir la siguiente feature con implementador y revisor |
 | `mars init` | Crea `.mars/config.json` y, si el proyecto no tiene mapa, un esqueleto corto de `AGENTS.md` con los checks detectados |
 | `mars doctor` | Diagnostica Node, Git, configuración, credenciales y sandbox |
 | `mars login PROVEEDOR --api-key` | Guarda una API key de forma interactiva |

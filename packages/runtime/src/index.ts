@@ -194,3 +194,4 @@ export { FileEventLog, ProviderHealthTracker, eventLogPath, readEventLog, readEv
 export { openIsolatedWorkspace, captureIsolatedResult, isolatedRunExists, workingDiff, listIsolatedRuns, isolatedDiff, applyIsolatedRun, discardIsolatedRun, type IsolatedWorkspace, type IsolatedRun, type IsolatedResult, type IsolationOptions } from './isolation.js';
 export { FileKnowledgeStore, memoryData, redactKnowledgeSecrets, type KnowledgeStore, type KnowledgeSnapshot, type KnowledgeEntry, type KnowledgeProposal, type KnowledgeSource, type KnowledgeKind } from './knowledge.js';
 export { BUILTIN_AGENTS, agentsDirectory, loadAgents, parseAgent, type AgentDefinition } from './agents.js';
+export { featureOutcome, featureTask, featuresPath, loadFeatures, nextFeature, parseFeatures, saveFeatures, type Feature, type FeatureList, type FeatureStatus } from './features.js';
